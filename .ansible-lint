@@ -1,0 +1,20 @@
+---
+# .ansible-lint
+skip_list:
+  - name[template]
+  - no-changed-when
+  - package-latest
+  - yaml[line-length]
+  - jinja[invalid]
+  - deprecated-command-syntax
+  - name[casing]
+  - risky-file-permissions
+  - role-name
+  - jinja[spacing]
+
+exclude_paths:
+  - .cache/ # implicit unless exclude_paths is defined in config
+  - .github/
+  - roles/docker/defaults/main.yml
+  - roles/git-folder-apply/vars/main.yaml
+  - blueprints/
