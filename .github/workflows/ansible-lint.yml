@@ -22,7 +22,6 @@ jobs:
         with:
           status: ${{ job.status }}
           notify_when: 'failure'
-          status: ${{ job.status }} # required
           notification_title: '{workflow} has {status_message}'
           message_format: '{emoji} *{workflow}* {status_message} in <{repo_url}|{repo}>'
           footer: 'Linked to Repo <{repo_url}|{repo}>'
