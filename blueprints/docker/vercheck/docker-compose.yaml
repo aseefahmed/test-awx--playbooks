@@ -1,0 +1,60 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --providers.file.filename=/data/traefik.toml
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik
+      - ./traefik.toml:/data/traefik.toml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redirs.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirs.entrypoints=web"
+      - "traefik.http.routers.redirs.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    logging:
+      driver: local
+  vercheck:
+    restart: unless-stopped
+    image: registry.barfoot.co.nz/devops/vercheck:{{ vercheck_tag }}
+    container_name: vercheck
+    command:
+      - -config
+      - /backend/config/vercheck.conf
+      - -data-dir
+      - /backend/data
+      - -port
+      - "1323"
+    environment:
+      - TZ=Pacific/Auckland
+    volumes:
+      - /mnt/docker/vercheck/data:/backend/data
+      - ./config/vercheck.conf:/backend/config/vercheck.conf
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vercheck.rule=Host(`{{ vercheck_host }}`)"
+      - "traefik.http.routers.vercheck.entrypoints=websecure"
+      - "traefik.http.routers.vercheck.tls.certresolver=letsencrypt"
+      - "traefik.http.services.vercheck.loadbalancer.server.port=1323"
+    logging:
+      driver: local

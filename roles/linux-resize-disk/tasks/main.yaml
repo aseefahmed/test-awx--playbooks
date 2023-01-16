@@ -1,0 +1,41 @@
+- name: Get datacentre and datastore names for the VM from vsphere via PowerCLI
+  ansible.builtin.script: getDatastore.ps1 {{ vmware_vmname | default(vmname) }}
+  environment:
+    VMWARE_HOST: "{{ vcenter_server }}"
+  delegate_to: localhost
+  register: get_datastore
+
+- name: Set vmware_datastore variable
+  ansible.builtin.set_fact:
+    vmware_datastore: "{{ get_datastore.stdout_lines[0] }}"
+  when: vmware_datastore == None
+  failed_when: not vmware_datastore
+
+- name: Set vmware_datacentre variable
+  ansible.builtin.set_fact:
+    vmware_datacentre: "{{ get_datastore.stdout_lines[1] }}"
+
+- name: Resize disk on vsphere
+  vmware_guest_disk:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ vmware_datacentre }}"
+    validate_certs: false
+    name: "{{ vmware_vmname | default(vmname) }}"
+    disk:
+      - size_gb: "{{ vmware_disk_gb }}"
+        datastore: "{{ vmware_datastore }}"
+        state: present
+        scsi_controller: 0
+        unit_number: 0
+        scsi_type: "lsilogic"
+  delegate_to: localhost
+
+- name: Template resize script file to remote
+  ansible.builtin.template:
+    src: add-space.sh.template
+    dest: add-space.sh
+
+- name: Run resize disks/partitions script on the VM
+  ansible.builtin.command: bash add-space.sh

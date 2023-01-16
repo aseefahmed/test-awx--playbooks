@@ -1,0 +1,6 @@
+- name: Create Internal DNS Record
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - import_role:
+      name: create-dns-record-internal

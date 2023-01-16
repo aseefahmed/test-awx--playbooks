@@ -1,0 +1,5 @@
+- hosts: "{{ server_groups[server_group] }}"
+  gather_facts: false
+  tasks:
+  - ansible.builtin.import_role:
+      name: postgres-database

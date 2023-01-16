@@ -1,0 +1,56 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --providers.file.filename=/data/traefik.toml
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik
+      - ./traefik.toml:/data/traefik.toml
+    logging:
+      driver: local
+  wiki:
+    image: requarks/wiki:{{ wikijs_tag }}
+    container_name: wikijs
+    restart: unless-stopped
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: {{ postgres_host }}
+      DB_PORT: {{ postgres_port }}
+      DB_USER: {{ postgres_db }}
+      DB_PASS: $POSTGRES_PASSWORD
+      DB_NAME: {{ postgres_db }}
+      DB_SSL: true
+    depends_on:
+      traefik:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wikijs.rule=Host(`{{ wikijs_host_header }}`)"
+      - "traefik.http.routers.wikijs.entrypoints=websecure"
+      - "traefik.http.routers.wikijs.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wikijs.service=wikijs"
+      - "traefik.http.services.wikijs.loadbalancer.server.port=3000"
+    logging:
+      driver: local

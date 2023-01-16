@@ -1,0 +1,4 @@
+- hosts: linux
+  gather_facts: false
+  roles:
+    - linux-resize-disk

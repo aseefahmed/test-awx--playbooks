@@ -1,0 +1,23 @@
+- name: read f5 password
+  hashivault_read:
+    mount_point: "{{ f5_environment }}"
+    secret: "{{ vault_path_prefix }}"
+    key: "password"
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: f5_password
+  delegate_to: localhost
+
+- name: Add Item to DataGroup on F5
+  bigip_command:
+    commands: modify ltm data-group internal {{f5_datagroup}} records add { {{datagroup_item}} } type {{datagroup_type}}
+    provider:
+      server: "{{f5_server[f5_environment]}}"
+      password: "{{ f5_password.value }}"
+      user: "{{f5_user}}"
+      validate_certs: "no"
+  delegate_to: localhost

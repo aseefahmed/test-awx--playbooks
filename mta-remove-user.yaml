@@ -1,0 +1,39 @@
+# This was created by copying pasting and editing playbook written by Caine for creating an mta user
+# All blame goes to Caine and all credit to me
+# Thank you for reading, Andrew
+- name: Delete MTA User
+  hosts: mta
+  gather_facts: false
+
+  tasks:
+    - name: Delete user in postfix
+      ansible.builtin.shell: docker exec -i postfix saslpasswd2 -d -f /etc/sasl2/sasldb2 -u "barfoot.co.nz" "{{email_user}}"
+      become: true
+
+    - name: Delete production credentials to vault
+      hashivault_delete:
+        permanent: true
+        secret: "Infrastructure/Mta/{{ email_user }}"
+        mount_point: Production
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Delete staging credentials to vault
+      hashivault_delete:
+        permanent: true
+        secret: "Infrastructure/Mta/{{ email_user }}"
+        mount_point: Staging
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+      run_once: true

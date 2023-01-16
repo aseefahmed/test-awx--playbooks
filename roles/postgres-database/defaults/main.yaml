@@ -1,0 +1,24 @@
+vault_addres: https://vault.barfoot.co.nz
+environment_pattern: '^(p|s|t|d)-.*'
+environment_map:
+  p:
+    vault_engine: Production
+    vault_path_prefix: Databases/Postgres/
+  s:
+    vault_engine: Staging
+    vault_path_prefix: Databases/Postgres/
+  t:
+    vault_engine: Test
+    vault_path_prefix: Databases/Postgres/
+  d:
+    vault_engine: Development
+    vault_path_prefix: Databases/Postgres/
+
+server_groups:
+  "*-db-api-pg-01": p-db-api-pg-01.barfoot.co.nz,s-db-api-pg-01.barfoot.co.nz,t-db-api-pg-01.barfoot.co.nz
+  "*-db-api-pg-02": p-db-api-pg-02.barfoot.co.nz,s-db-api-pg-02.barfoot.co.nz,t-db-api-pg-02.barfoot.co.nz
+  "p-db-api-pg-03": p-db-api-pg-03.barfoot.co.nz
+  "*-db-web-pg-01": p-db-web-pg-01.barfoot.co.nz,s-db-web-pg-01.barfoot.co.nz,t-db-web-pg-01.barfoot.co.nz
+  "*-db-iam-pg-01": p-db-iam-pg-01.barfoot.co.nz,s-db-iam-pg-01.barfoot.co.nz,t-db-iam-pg-01.barfoot.co.nz
+  "p-db-devops-pg-01": p-db-devops-pg-01.barfoot.co.nz
+  "p-db-teamcity-2": p-db-teamcity-2.barfoot.co.nz

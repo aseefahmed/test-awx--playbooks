@@ -1,0 +1,246 @@
+- name: Set backup_flag fact to false when not defined
+  ansible.builtin.set_fact:
+    backup_flag: "false"
+  when: backup_flag is not defined
+
+- name: Include role
+  ansible.builtin.include_role:
+    -backup-tag
+  vars:
+    os: "windows"
+    vmname: "{{ vmware_vmname }}"
+    vmware_dc: "{{ vmware_datacentre }}"
+    bu_flag_set: "{{ backup_flag }}"
+
+- name: Ensure pypsexec
+  ansible.builtin.ansible.builtin.pip:
+    name: pypsexec
+  delegate_to: localhost
+- name: Ensure jmespath
+  ansible.builtin.ansible.builtin.pip:
+    name: jmespath
+  delegate_to: localhost
+- name: Include role
+  ansible.builtin.include_role:
+    name: rotate-windows-password
+  vars:
+    skip_win_user: true
+
+- name: Clone a virtual machine from Windows template and customize
+  vmware_guest:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ vmware_datacentre }}"
+    name: "{{ vmware_vmname }}"
+    folder: "{{ vmware_folder }}"
+    template: "{{ vmware_datacentre }}/vm/Templates/{{ vmware_template_name }}"
+    state: poweredon
+    wait_for_ip_address: true
+    datastore: "{{ vmware_datastore }}"
+    annotation: "{{ vmware_annotation }} Created by {{ tower_user_name }} on {{ lookup('pipe','TZ=Pacific/Auckland date +%F') }}"
+    hardware:
+      memory_mb: "{{ (vmware_memory_gb | int) * 1024 }}"
+      num_cpus: "{{ vmware_num_cpus }}"
+    networks:
+      - name: "{{ vmware_network }}"
+        ip: "{{ vmware_ip }}"
+        netmask: "{{ vmware_netmask }}"
+        gateway: "{{ gateways[vmware_network] }}"
+        domain: "{{ vmware_domain }}"
+        dns_servers: "{{ dnsservers[vmware_network].split(',') }}"
+    customization:
+      password: "{{ vault_password.value }}"
+      dns_servers: "{{ dnsservers[vmware_network].split(',') }}"
+      domain: "{{ vmware_domain }}"
+      domainadmin: "{{ winrm_username }}"
+      joindomain: "{{ vmware_domain }}"
+      hostname: "{{ vmware_vmname }}"
+      domainadminpassword: "{{ winrm_password }}"
+      timezone: 290
+    wait_for_customization: true
+  delegate_to: localhost
+- name: Resize disk
+  vmware_guest_disk:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ vmware_datacentre }}"
+    validate_certs: false
+    name: "{{ vmware_vmname }}"
+    disk:
+      - size_gb: "{{ vmware_disk_gb }}"
+        datastore: "{{ vmware_datastore }}"
+        state: present
+        scsi_controller: 0
+        unit_number: 0
+        scsi_type: "lsilogicsas"
+  delegate_to: localhost
+- name: Download and run ConfigureRemotingForAnsible.ps1 to setup WinRM
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: 'vagrant'
+    connection_password: 'vagrant'
+    encrypt: true
+    executable: powershell.exe
+    arguments: '-'
+    stdin: |
+      $ErrorActionPreference = "Stop"
+      $sec_protocols = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::SystemDefault
+      $sec_protocols = $sec_protocols -bor [Net.SecurityProtocolType]::Tls12
+      [Net.ServicePointManager]::SecurityProtocol = $sec_protocols
+      $url = "https://minio-02.barfoot.co.nz/installs/ConfigureRemotingForAnsible.ps1"
+      (New-Object System.Net.WebClient).DownloadFile($url, ".\ConfigureRemotingForAnsible.ps1")
+      powershell -ExecutionPolicy ByPass -File .\ConfigureRemotingForAnsible.ps1 -AllowedIPs "{{ winrm_allowed_ips }}"
+      Remove-Item .\ConfigureRemotingForAnsible.ps1 -Force -Confirm:$false
+      exit
+  delegate_to: localhost
+- name: Update group policy
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: 'vagrant'
+    connection_password: 'vagrant'
+    encrypt: true
+    executable: powershell.exe
+    arguments: '-'
+    stdin: |
+      gpupdate /force
+      exit
+  delegate_to: localhost
+- name: Enable WMI for Logic Monitor
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: 'vagrant'
+    connection_password: 'vagrant'
+    encrypt: true
+    executable: powershell.exe
+    arguments: '-'
+    stdin: |
+      netsh advfirewall firewall set rule group="remote administration" new enable=yes
+      netsh advfirewall firewall set rule group="Windows Remote Management" new enable=yes
+      netsh advfirewall firewall set rule group="windows management instrumentation (wmi)" new enable=yes
+      exit
+  delegate_to: localhost
+- name: Add machine to in-memory inventory_plugins
+  ansible.builtin.add_host:
+    # name: "{{ vmware_vmname }}.{{ vmware_domain }}"
+    name: "{{ vmware_ip }}"
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+    ansible_user: "{{winrm_username}}"
+    ansible_password: "{{winrm_password}}"
+    ansible_winrm_transport: ntlm
+    ansible_become_method: runas
+- name: Import role
+  ansible.builtin.import_role:
+    name: crowdstrike-deployment-windows
+  delegate_to: "{{ vmware_ip }}"
+- name: Delete provisioning user
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: "{{ winrm_username }}"
+    connection_password: "{{ winrm_password }}"
+    encrypt: true
+    executable: C:\Windows\Sysnative\WindowsPowerShell\v1.0\powershell.exe
+    arguments: '-'
+    stdin: |
+      Remove-LocalUser -Name "vagrant"
+      exit
+  delegate_to: localhost
+- name: Ensure minio
+  ansible.builtin.get_url:
+    url: https://dl.min.io/client/mc/release/linux-amd64/mc
+    dest: /tmp/mc
+    mode: +x
+  delegate_to: localhost
+- name: Upload files
+  no_log: true
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp --recursive roles/windows-vm/files bt/{{ minio_path }}/windows-vm
+  delegate_to: localhost
+- name: Resize partition
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: "{{ winrm_username }}"
+    connection_password: "{{ winrm_password }}"
+    encrypt: true
+    executable: C:\Windows\Sysnative\WindowsPowerShell\v1.0\powershell.exe
+    arguments: '-'
+    stdin: |
+      curl.exe https://{{ minio_server }}/{{ minio_path }}/windows-vm/files/resize.ps1  -o C:\Windows\Temp\resize.ps1
+      & C:\Windows\Temp\resize.ps1
+      exit
+  delegate_to: localhost
+- name: Tag new VM with specified Custom Attributes
+  vmware_guest_custom_attributes:
+    datacenter: "{{ vmware_datacentre }}"
+    folder: "{{ vmware_folder }}"
+    hostname: "{{ vcenter_server }}"
+    name: "{{ vmware_vmname }}"
+    password: "{{ vcenter_password }}"
+    username: "{{ vcenter_username }}"
+    validate_certs: false
+    attributes: '{{ vmware_custom_attributes | json_query("[].{name: @, value: `True`}") }}'
+  delegate_to: localhost
+  when: vmware_custom_attributes is defined
+
+- name: Tag new VM with kubernetes Custom Attributes (PowerCLI)
+  ansible.builtin.shell: |
+    set -o pipefail
+    $ErrorActionPreference = "Stop"
+    $server = Connect-VIServer -Server "{{ vcenter_server }}" -Password $env:VMWARE_PASSWORD -User $env:VMWARE_USER
+    $dc = Get-Datacenter "{{ vmware_datacentre }}"
+    $base = Get-Folder vm -Type VM -NoRecursion -Location $dc
+    "{{ vmware_folder }}".trim("/").split("/") | %{
+      $base = Get-Folder $_ -Type VM -NoRecursion -Location $base
+    }
+    $vm = Get-VM -Name "{{ vmware_vmname }}" -Location $base
+    $vm | Set-Annotation -CustomAttribute InstallMMA -Value "True"
+  args:
+    executable: /usr/bin/pwsh
+  environment:
+    VMWARE_PASSWORD: "{{ vcenter_password }}"
+    VMWARE_USER: "{{ vcenter_username }}"
+  delegate_to: localhost
+
+# - name: Tag new VM with InstallMMA Custom Attributes
+#   vmware_guest_custom_attributes:
+#     datacenter: "{{ vmware_datacentre }}"
+#     folder: "{{ vmware_folder }}"
+#     hostname: "{{ vcenter_server }}"
+#     name: "{{ vmware_vmname }}"
+#     password: "{{ vcenter_password }}"
+#     username: "{{ vcenter_username }}"
+#     validate_certs: false
+#     attributes:
+#       - name: "InstallMMA"
+#         value: "True"
+#   delegate_to: localhost
+
+- name: Add Team tags to virtual machine
+  vmware_tag_manager:
+    hostname: '{{ vcenter_server }}'
+    username: '{{ vcenter_username }}'
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    tag_names:
+      - "Team:{{ vmware_team }}"
+    object_name: "{{ vmware_vmname }}"
+    object_type: VirtualMachine
+    state: add
+  delegate_to: localhost
+
+- name: Add Backup tags to virtual machine
+  vmware_tag_manager:
+    hostname: '{{ vcenter_server }}'
+    username: '{{ vcenter_username }}'
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    tag_names:
+      - "Backups:{{ backup_job }}"
+    object_name: "{{ vmware_vmname }}"
+    object_type: VirtualMachine
+    state: add
+  delegate_to: localhost
+  when: backup_job is defined

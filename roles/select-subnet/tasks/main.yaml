@@ -1,0 +1,25 @@
+- name: Detecting network from ip address {{ ip }}
+  ansible.builtin.shell: |
+    set -o pipefail
+    $ErrorActionPreference = "Stop"
+    $ip = "{{ ip }}"
+    $lookup = @{
+      "192.168.6." = "Admin Network"
+      "192.168.60." = "Stage-Admin"
+      "192.168.70." = "Stage-DMZ"
+      "192.168.80." = "Stage-DMZ-Backend"
+      "10.150.255." = "Dev"
+      "192.168.7." = "DMZ"
+      "192.168.8." = "DMZ Back End"
+      "192.168.11." = "Identity"
+      "192.168.110." = "Staging-Identity"
+      "192.168.16." = "Branch-DMZ"
+      "192.168.200." = "Infrastructure"
+    }
+    $network = $lookup.Keys | ForEach-Object { if ($ip.StartsWith($_)) {$lookup[$_] }}
+    if (!$network) { Write-Error "IP '$ip' is not on any know network"; exit 1 }
+    $network
+  args:
+    executable: pwsh
+  register: detected_network
+  delegate_to: localhost

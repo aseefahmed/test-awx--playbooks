@@ -1,0 +1,16 @@
+version: "3.7"
+services:
+  teamcity-agent-1:
+    image: registry.barfoot.co.nz/devops/teamcity-agent-linux:{{ agent_image_version }}
+    container_name: teamcity-agent-1
+    restart: unless-stopped
+    environment:
+      - SERVER_URL={{ tc_server }}
+      - AGENT_NAME={{ agent_name }}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/docker/teamcity/agent1:/data/teamcity_agent/conf
+      - /mnt/docker/teamcity/agent1-tmp:/opt/buildagent/tmp
+      - /opt/buildagent/work:/opt/buildagent/work
+    logging:
+      driver: local

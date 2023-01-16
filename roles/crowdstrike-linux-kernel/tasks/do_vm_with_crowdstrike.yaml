@@ -1,0 +1,45 @@
+- name: Get crowdstrike version
+  become: true
+  changed_when: false
+  ansible.builtin.shell: |
+    $ErrorActionPreference = "Stop"
+    $ver = /opt/CrowdStrike/falconctl -g --version
+    if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    $data = $ver -split '='
+    if ($data.count -ne 2) { Write-Error "Expected single '=' in $ver"; exit 1 }
+    $match = ([regex]"(\d+).(\d+).(\d+)").Match($data[1])
+    if (!$match.Success) { Write-Error "Could not match version in $ver"; exit 1 }
+    $match.Value
+  args:
+    executable: /usr/local/bin/pwsh
+  register: crowdstrike_version
+
+- name: Get latest supported kernel version
+  changed_when: false
+  ansible.builtin.script: get-falcon-kernel-support.ps1
+  environment:
+    FALCON_TOKEN: "{{ falcon_token.stdout_lines | last }}"
+    FALCON_VERSION: "{{ crowdstrike_version.stdout }}"
+    FALCON_VENDOR: "{{ kernel_info[os_id].vendor }}"
+    FALCON_DISTRO: "{{ kernel_info[os_id].distro }}"
+    FALCON_FLAVOR: "{{ kernel_info[os_id].flavor }}"
+    ## This is for the debugging with "custom" curl
+    # CURL_CA_BUNDLE: /etc/pki/tls/certs/ca-bundle.crt
+  delegate_to: localhost
+  register: target_kernel_version
+
+- name: Ensure that the target kernel version is installed
+  changed_when: pwsh_result.stdout_lines | last == 'changed'
+  become: true
+  ansible.builtin.script: ensure-target-kernel.ps1
+  register: pwsh_result
+  environment:
+    FALCON_TARGET_KERNEL: "{{ target_kernel_version.stdout_lines | last }}"
+
+- name: Reboot vm
+  become: true
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - skip_reboot
+    - pwsh_result.stdout_lines | last == 'changed'

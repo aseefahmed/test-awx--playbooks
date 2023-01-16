@@ -1,0 +1,4 @@
+vault_address: https://vault.barfoot.co.nz
+vault_engine_version: 2
+vault_prometheus_path_prefix: "Infrastructure/kubernetes/{{ kubernetes_environment }}/prometheus/grafana"
+webteam_namespace_regex: '.*-apiservicedesk|.*-application-list-service|.*-auctions-ui-log-service|.*-material-email-service|.*-material-pdf-service|.*-profiles|.*-routing|.*-service-desk|.*-sms-service|.*-agency-agreement-expiry|.*-apps'

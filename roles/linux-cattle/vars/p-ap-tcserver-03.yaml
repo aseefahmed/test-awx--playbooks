@@ -1,0 +1,79 @@
+vmware_vmname: p-ap-tcserver-03
+vmware_domain: barfoot.co.nz
+vmware_network: Identity
+vmware_ip: 192.168.11.11
+vmware_team: Infrastructure
+vmware_annotation: TeamCity Identity Server instance
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 8
+vmware_disk_gb: "50"
+vmware_folder: /Identity/Team City
+vmware_datacentre: DC01
+vmware_datastore: DC01-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+teamcity_host: identity-teamcity.barfoot.co.nz
+teamcity_artifacts_host: identity-teamcity-artifacts.barfoot.co.nz
+traefik_tag: v2.9.6
+teamcity_tag: "2022.10.1"
+
+secrets:
+- secret_mount: Production
+  secret_path: Infrastructure/cloudflare/cert-manager
+  secret_key: token
+  engine_version: "2"
+  variable_name: cloudflare_token
+
+git_apply:
+- name: Copy configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/teamcity-server
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: init script
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/teamcity-server
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "init.sh"
+  apply_command: bash "{{ apply_target_path }}"
+- name: docker-compose
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/teamcity-server
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: docker-compose.yaml
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+
+#mode: no_persistance
+# used in setup_backup mode
+#mode: setup_backup
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker/teamcity/datadir
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths: /mnt/docker/teamcity/backup /mnt/docker/teamcity/datadir/system/caches
+#  pre_backup_script: ~/manifests_rendered/backup/pre-backup.sh
+#  post_backup_script: ~/manifests_rendered/backup/post-backup.sh
+# used in restore mode
+mode: restore
+restic_snapshot_to_restore: latest

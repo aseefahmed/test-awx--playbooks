@@ -1,0 +1,15 @@
+---
+- name: Create root .kube directory
+  become: true
+  ansible.builtin.file:
+    state: directory
+    dest: /root/.kube
+- name: Copy kubeconfig to the root .kube directory
+  become: true
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    mode: 0600
+    owner: root
+    group: root

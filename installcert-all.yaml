@@ -1,0 +1,148 @@
+- name: Install Lets Encrypt Wildcard Certificate
+  hosts: btstarcert
+  gather_facts: false
+  vars:
+    remote_host: p-in-certmgr-01.barfoot.co.nz
+    remote_path: /var/lib/rancher/k3s/storage/star-cert/
+  tasks:
+
+    - name: Create local temporary directory
+      delegate_to: localhost
+      ansible.builtin.tempfile:
+        state: directory
+      register: tempdir
+
+    - name: Pull keys/files
+      delegate_to: localhost
+      ansible.builtin.command: |
+        /usr/bin/rsync -L -e "ssh -o StrictHostKeyChecking=no" --recursive "awx@{{remote_host}}:{{remote_path}}" "{{tempdir.path}}"
+
+    - name: Get Certificate Serial
+      delegate_to: localhost
+      ansible.builtin.shell: |
+        openssl x509 -noout -serial -in '{{tempdir.path}}/_.barfoot.co.nz.crt' | cut -d'=' -f2
+      register: serial
+
+    - name: Import SSL Key
+      bigip_ssl_key:
+        provider:
+          server: "{{ f5_server }}"
+          password: "{{ f5_password }}"
+          user: "{{ f5_user }}"
+          validate_certs: "no"
+        name: "starletsencrypt_{{ serial.stdout }}"
+        content: "{{ lookup('file', '{{tempdir.path}}/_.barfoot.co.nz.key') }}"
+      delegate_to: localhost
+      when: "'F5' in group_names"
+
+    - name: Import SSL Certificate
+      bigip_ssl_certificate:
+        provider:
+          server: "{{ f5_server }}"
+          password: "{{ f5_password }}"
+          user: "{{ f5_user }}"
+          validate_certs: "no"
+        name: "starletsencrypt_{{ serial.stdout }}"
+        content: "{{ lookup('file', '{{tempdir.path}}/_.barfoot.co.nz.crt') }}"
+      delegate_to: localhost
+      when: "'F5' in group_names"
+
+    - name: Update profile
+      loop: "{{ profiles }}"
+      bigip_profile_client_ssl:
+        state: present
+        name: "{{ item }}"
+        provider:
+          server: "{{ f5_server }}"
+          password: "{{ f5_password }}"
+          user: "{{ f5_user }}"
+          validate_certs: "no"
+        cert_key_chain:
+          - cert: "starletsencrypt_{{ serial.stdout }}.crt"
+            key: "starletsencrypt_{{ serial.stdout }}.key"
+            chain: "starletsencrypt_{{ serial.stdout }}.crt"
+      delegate_to: localhost
+      when: "'F5' in group_names"
+
+    - name: Convert to pfx
+      delegate_to: localhost
+      ansible.builtin.command: "openssl pkcs12 -export -out {{tempdir.path}}/cert.pfx -inkey {{tempdir.path}}/_.barfoot.co.nz.key -in {{tempdir.path}}/_.barfoot.co.nz.crt -passout pass:{{ lookup('password', '{{tempdir.path}}/passwordfile') }}"
+
+    - name: Get PFX file content
+      delegate_to: localhost
+      ansible.builtin.slurp:
+        src: "{{tempdir.path}}/cert.pfx"
+      register: pfx
+
+    - name: Write secrets to vault
+      hashivault_secret:
+        mount_point: "Production"
+        secret: "Infrastructure/certs/barfoot.co.nz"
+        data:
+          key: "{{ lookup('file', '{{tempdir.path}}/_.barfoot.co.nz.key') }}"
+          cert: "{{ lookup('file', '{{tempdir.path}}/_.barfoot.co.nz.crt') }}"
+          pfx: "{{ pfx.content }}"
+          pfx-password: "{{ lookup('password', '{{ tempdir.path }}/passwordfile chars=ascii_letters') }}"
+        version: 2
+        state: update
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+
+    - name: Add password to fact (Windows)
+      ansible.builtin.set_fact:
+        sslpass: "{{ lookup('password', '{{tempdir.path}}/passwordfile') }}"
+      when: "'win' in group_names"
+
+    - name: Enusre temp directory for cert (Windows)
+      win_file:
+        path: "C:\\Temp"
+        state: directory
+      when: "'win' in group_names"
+
+    - name: Copy pfx (Windows)
+      win_copy:
+        dest: "C:\\Temp\\from_ansible.pfx"
+        src: "{{tempdir.path}}/cert.pfx"
+      when: "'win' in group_names"
+
+    - name: Copy install script (Windows)
+      win_copy:
+        dest: "C:\\Temp\\install-cert-win.ps1"
+        src: "scripts/install-cert-win.ps1"
+      when: "'win' in group_names"
+
+    - name: Update ssl certificates (Windows)
+      win_shell: "C:\\Temp\\install-cert-win.ps1 -certpass '{{ sslpass }}'"
+      when: "'win' in group_names"
+
+    - name: Remove remote pfx (Windows)
+      win_file:
+        path: "C:\\Temp\\from_ansible.pfx"
+        state: absent
+      when: "'win' in group_names"
+
+    - name: Remove remote ps1 (Windows)
+      win_file:
+        path: "C:\\Temp\\install-cert-win.ps1"
+        state: absent
+      when: "'win' in group_names"
+
+    - name: Copy certificates to destination (Linux)
+      become: true
+      ansible.builtin.copy:
+        src: "{{tempdir.path}}/"
+        dest: /etc/ssl/certs/
+        mode: '0600'
+        owner: root
+        group: root
+      when: "'linux' in group_names"
+
+    - name: Remove local temp directory (Linux)
+      delegate_to: localhost
+      ansible.builtin.file:
+        state: absent
+        path: "{{tempdir.path}}"

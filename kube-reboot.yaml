@@ -1,0 +1,14 @@
+- hosts: all
+  gather_facts: false
+  serial: 1
+  order: sorted
+  tasks:
+    - ansible.builtin.import_role:
+        name: kube-reboot
+      tags: reboot
+- hosts: all
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_role:
+        name: etcd-defrag
+      tags: defrag

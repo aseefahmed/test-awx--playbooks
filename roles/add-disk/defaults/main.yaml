@@ -1,0 +1,14 @@
+# Max number of devices per scsi controller
+scsi_max_devices: 15
+# Max id for scsi controllers
+scsi_max_controller_id: 3
+
+scsi_controller_unique_keys: >-
+  {{
+    vm_disk_info.guest_disk_info
+    | dict2items
+    | map(attribute='value.controller_key')
+    | list
+    | unique
+    | sort
+  }}

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    restart: unless-stopped
+    image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
+    container_name: postgres
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    stdin_open: true
+    tty: true
+    volumes:
+    - /mnt/docker/postgres/data:/var/lib/postgresql/data
+    - /mnt/docker/postgres/certs:/certs
+    - /mnt/docker/postgres/backup:/backup
+    logging:
+      driver: local
+    command: >
+      -c ssl=on
+      -c ssl_cert_file=/certs/_.barfoot.co.nz.crt
+      -c ssl_key_file=/certs/_.barfoot.co.nz.key

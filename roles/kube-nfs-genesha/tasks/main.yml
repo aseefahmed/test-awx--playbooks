@@ -1,0 +1,11 @@
+---
+- name: Debug
+  ansible.builtin.debug:
+    var: nfs_genesha_image
+- name: Template manifest file to remote
+  ansible.builtin.template:
+    src: nfs.yaml
+    dest: nfs-provisioner.yaml
+- name: Install provisioner
+  ansible.builtin.shell: |
+    kubectl apply -f nfs-provisioner.yaml

@@ -1,0 +1,152 @@
+prometheus:
+  prometheusSpec:
+    externalUrl: https://{{ prometheus_host }}
+    externalLabels:
+      cluster: {{ kubernetes_environment }}
+    secrets: ['etcd-client-cert']
+    retentionSize: "10GB"
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: managed-nfs-storage
+          resources:
+            requests:
+              storage: 10Gi
+  ingress:
+    enabled: true
+    hosts:
+    - "{{ prometheus_host }}"
+    paths:
+    - /
+
+alertmanager:
+  config:
+    global:
+      slack_api_url: "{{ slack_api_url }}"
+      "resolve_timeout": "5m"
+    "inhibit_rules":
+    - "equal":
+      - "namespace"
+      - "alertname"
+      "source_match":
+        "severity": "critical"
+      "target_match_re":
+        "severity": "warning|info"
+    - "equal":
+      - "namespace"
+      - "alertname"
+      "source_match":
+        "severity": "warning"
+      "target_match_re":
+        "severity": "info"
+    receivers:
+    - name: 'null'
+    - name: slack
+      slack_configs:
+      - channel: "{{ slack_main_channel }}"
+        send_resolved: true
+        icon_url: "https://avatars3.githubusercontent.com/u/3380462"
+{% raw %}
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* [{{ .Status | toUpper }}] {{ .Labels.alertname }} - `{{ .Labels.severity }}`
+            *Rule:* <{{ .GeneratorURL }}|Click here>
+            *Message:* {{ .Annotations.message }}
+            *Description:* {{ .Annotations.description }}
+            *Details:*
+            {{ range .Labels.SortedPairs }}  *{{ .Name }}:* `{{ .Value }}`
+            {{ end }}
+            *Starts At:* {{ .StartsAt.Format "15:04; 2 Jan 2006 MST" }}
+            *Ends At:* {{ .EndsAt.Format "15:04; 2 Jan 2006 MST" }}
+          {{ end }}
+    - name: alerts-web-team
+      slack_configs:
+      - channel: alerts-web-team
+        send_resolved: true
+        icon_url: "https://avatars3.githubusercontent.com/u/3380462"
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}'
+        text: >-
+          {{ range .Alerts }}
+            *Alert:* [{{ .Status | toUpper }}] {{ .Labels.alertname }} - `{{ .Labels.severity }}`
+            *Rule:* <{{ .GeneratorURL }}|Click here>
+            *Message:* {{ .Annotations.message }}
+            *Description:* {{ .Annotations.description }}
+            *Details:*
+            {{ range .Labels.SortedPairs }}  *{{ .Name }}:* `{{ .Value }}`
+            {{ end }}
+            *Starts At:* {{ .StartsAt.Format "15:04; 2 Jan 2006 MST" }}
+            *Ends At:* {{ .EndsAt.Format "15:04; 2 Jan 2006 MST" }}
+          {{ end }}
+{% endraw %}
+    route:
+      receiver: slack
+      group_by: [ cluster, alertname ]
+      routes:
+      - matchers:
+        - alertname =~ "InfoInhibitor|Watchdog"
+        receiver: 'null'
+      - receiver: alerts-web-team
+        continue: true
+        matchers:
+        - namespace =~ "{{ webteam_namespace_regex }}"
+        group_by: [ cluster, alertname ]
+      - receiver: slack
+        group_by: [ cluster, alertname ]
+  ingress:
+    enabled: true
+    hosts: 
+    - "{{ alertmanager_host }}"
+    paths:
+    - /
+  alertmanagerSpec:
+    externalUrl: https://{{ alertmanager_host }}
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: managed-nfs-storage
+          resources:
+            requests:
+              storage: 1Gi
+
+grafana:
+  defaultDashboardsTimezone: browser
+  adminPassword: "{{ grafana_password }}"
+  ingress:
+    enabled: true
+    hosts:
+      - "{{ grafana_host }}"
+    path: /
+
+kubeControllerManager:
+  service:
+    port: 10257
+    targetPort: 10257
+  serviceMonitor:
+    https: "true"
+    insecureSkipVerify: "true"
+
+kubeScheduler:
+  service:
+    port: 10259
+    targetPort: 10259
+  serviceMonitor:
+    https: "true"
+    insecureSkipVerify: "true"
+
+kubeEtcd:
+  serviceMonitor:
+    scheme: https
+    insecureSkipVerify: "true"
+    caFile: /etc/prometheus/secrets/etcd-client-cert/ca.crt
+    certFile: /etc/prometheus/secrets/etcd-client-cert/healthcheck-client.crt
+    keyFile: /etc/prometheus/secrets/etcd-client-cert/healthcheck-client.key
+
+defaultRules:
+  disabled:
+    etcdHighNumberOfFailedGRPCRequests: true
+    etcdDatabaseHighFragmentationRatio: true
+    
+cleanPrometheusOperatorObjectNames: true

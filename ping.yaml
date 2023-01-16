@@ -1,0 +1,11 @@
+- name: ping
+  hosts: all
+  tasks:
+
+  - name: Ping (linux)
+    ansible.builtin.ping:
+    when: "'linux' in group_names"
+
+  - name: Ping (win)
+    win_ping:
+    when: "'win' in group_names"

@@ -1,0 +1,62 @@
+{% if skip_wildcard != true %}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: star-cert
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 500Mi
+  hostPath:
+    path: /var/lib/rancher/k3s/storage/star-cert
+  persistentVolumeReclaimPolicy: Delete
+  volumeMode: Filesystem
+  storageClassName: local-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: star-cert
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: local-storage
+  volumeMode: Filesystem
+  volumeName: star-cert
+{% endif %}
+{% if additional_subdomains != None and additional_subdomains | length > 0 %}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: additional-subdomains-certs
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 500Mi
+  hostPath:
+    path: /var/lib/rancher/k3s/storage/additional-subdomains-certs
+  persistentVolumeReclaimPolicy: Delete
+  volumeMode: Filesystem
+  storageClassName: local-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: additional-subdomains-certs
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: local-storage
+  volumeMode: Filesystem
+  volumeName: additional-subdomains-certs
+{% endif %}

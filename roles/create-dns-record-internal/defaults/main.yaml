@@ -1,0 +1,10 @@
+# These credentials normally come from AWX credentials
+winrm_username:
+winrm_password:
+
+# Domain controller to run DNS commands against
+dns_dc: btdc01
+
+# Host to run powershell on. This host has to be in the inventory and has to have the corrent WinRM settings
+# Search https://barfoot.atlassian.net/wiki/spaces/IT/pages/117572772/AWX+Setup+Upgrade+notes for "winrm setting"
+dns_management_host: p-mg-bco-01.barfoot.co.nz

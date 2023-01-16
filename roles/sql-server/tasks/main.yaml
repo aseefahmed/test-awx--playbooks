@@ -1,0 +1,61 @@
+- name: Ensure minio
+  ansible.builtin.get_url:
+    url: https://dl.min.io/client/mc/release/linux-amd64/mc
+    dest: /tmp/mc
+    mode: +x
+  delegate_to: localhost
+- name: Upload files
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp --recursive roles/sql-server/files bt/{{ minio_path }}/sql-server
+  no_log: true
+  delegate_to: localhost
+- name: Run sql customization
+  psexec:
+    hostname: "{{ vmware_ip }}"
+    connection_username: "{{ winrm_username }}"
+    connection_password: "{{ winrm_password }}"
+    encrypt: true
+    executable: C:\Windows\Sysnative\WindowsPowerShell\v1.0\powershell.exe
+    arguments: >-
+      -command &{
+        $code = new-object text.stringbuilder
+        while ($true) {
+          $line = [console]::readline()
+          if ($line -eq 'exit') {
+            break
+          }
+          [void]$code.appendline($line)
+        }
+        &([scriptblock]::create($code))
+      }
+    stdin: |
+      $ErrorActionPreference = "Stop"
+      try {
+        curl.exe https://{{ minio_server }}/{{ minio_path }}/sql-server/files/SQLInstanceConfigOptions.sql -o C:\Windows\Temp\SQLInstanceConfigOptions.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        curl.exe https://{{ minio_server }}/{{ minio_path }}/sql-server/files/SQLmodelDBConfig.sql -o C:\Windows\Temp\SQLmodelDBConfig.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        curl.exe https://{{ minio_server }}/{{ minio_path }}/sql-server/files/SQLServerName.sql -o C:\Windows\Temp\SQLServerName.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        curl.exe https://{{ minio_server }}/{{ minio_path }}/sql-server/files/SQLTempdbConfig.sql -o C:\Windows\Temp\SQLTempdbConfig.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        $tmp = gc C:\Windows\Temp\SQLInstanceConfigOptions.sql | %{ $_.Replace('%domain%',"{{ domains[vmware_domain] }}") }
+        $tmp | sc C:\Windows\Temp\SQLInstanceConfigOptions.sql
+        sqlcmd -S localhost -E -i C:\Windows\Temp\SQLInstanceConfigOptions.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        sqlcmd -S localhost -E -i C:\Windows\Temp\SQLmodelDBConfig.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        sqlcmd -S localhost -E -i C:\Windows\Temp\SQLTempdbConfig.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        $tmp = gc C:\Windows\Temp\SQLServerName.sql | %{ $_.Replace('%server%',"{{ vmware_vmname }}") }
+        $tmp | sc C:\Windows\Temp\SQLServerName.sql
+        sqlcmd -S localhost -E -i C:\Windows\Temp\SQLServerName.sql
+        if ($lastExitCode -ne 0) { exit 1 }
+        restart-service MSSQLSERVER -force
+        exit 0
+      } catch {
+        Write-Error -ErrorRecord $_ -ErrorAction Continue
+        exit 1
+      }
+      exit
+  delegate_to: localhost

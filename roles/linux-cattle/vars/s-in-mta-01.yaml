@@ -1,0 +1,129 @@
+vmware_vmname: s-in-mta-01
+vmware_domain: barfoot.co.nz
+vmware_network: Stage-DMZ-Backend
+vmware_ip: 192.168.80.1
+vmware_team: Infrastructure
+vmware_annotation: Staging Mail Transfer Agent (outgoing email for internal apps)
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "32"
+vmware_folder: /Staging/DevOps
+vmware_datacentre: DC02
+vmware_datastore: DC02-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+- Btstarcert
+- mta
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+postfix_tag: v220825_01
+allowed_ips_expressiion: /(^192\.168\.80\.15[0-4]$)/ INFO
+relayhost: "[smtp.mailtrap.io]:2525"
+f5_healthcheck_filter: unknown\\[192\\.168\\.80\\.15[0-4]\\]
+mydomain: barfoot.co.nz
+myhostname: barfoot.co.nz
+use_mailtrap_setup: "true"
+#syslog_forward: '@@p-sa-linsysmon-01.barfoot.co.nz:514'
+syslog_forward:
+syslog_file: '/var/log/postfix'
+
+secrets:
+- secret_mount: Staging
+  secret_path: Infrastructure/mailtrap/mta_config
+  secret_key: sasl_passwd
+  engine_version: "2"
+  variable_name: sasl_passwd
+- secret_mount: Production
+  secret_path: Infrastructure/certs/barfoot.co.nz
+  secret_key: cert
+  engine_version: "2"
+  variable_name: cert
+- secret_mount: Production
+  secret_path: Infrastructure/certs/barfoot.co.nz
+  secret_key: key
+  engine_version: "2"
+  variable_name: cert_key
+
+git_apply:
+- name: Copy all files
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/mta
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: Run init script
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/mta
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: init.sh
+  apply_command: bash "{{ apply_target_path }}"
+- name: Copy certificates
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/mta
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: copy-certs.sh
+  apply_command: bash "{{ apply_target_path }}"
+- name: collate allowed senders list
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/mta
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: collate-allowed-senders-list.ps1
+  apply_command: pwsh "{{ apply_target_path }}"
+  env:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+    VAULT_MTA_USERS_MOUNT_POINT: Staging
+    VAULT_MTA_USERS_PATH_PREFIX: Infrastructure/Mta
+- name: docker-compose
+  # This is the git repo with your manifests. Use git protocol, not https
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  # This is the directory inside the repo (without leading slash) where the manifests are
+  git_directory: blueprints/docker/mta
+  # This is the private key for the git repo
+  git_private_key: "{{ git_private_key }}"
+  # This specifies branch/tag/commit hash to switch to after cloning
+  git_version: "{{ git_version }}"
+  # This is where redndered manifest tempaltes end up
+  manifests_target_directory: ~/manifests_rendered
+  # This specifies if we want to get manifests from subfolders too
+  manifests_recurse: Yes
+  # Search pattern for the manifests like *.yml
+  manifests_patterns: docker-compose.yaml
+  # This is the command executed on the target to apply the file
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+
+#mode: setup_backup
+#mode: no_persistance
+mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker/postfix/log
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script:
+#  post_backup_script:
+# used in restore mode
+restic_snapshot_to_restore: latest

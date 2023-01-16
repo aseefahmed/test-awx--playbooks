@@ -1,0 +1,69 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik    
+  postgres:
+    restart: unless-stopped
+    image: postgres:{{ postgres_tag }}
+    container_name: semaphore_postgres
+    hostname: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    environment:
+      - POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+    stdin_open: true
+    tty: true
+    volumes:
+      - /mnt/docker/postgres/data:/var/lib/postgresql/data
+  semaphore:
+    image: andrewsav/semaphore:{{ semaphore_tag }}
+    container_name: semaphore
+    restart: unless-stopped
+    environment:
+      - SEMAPHORE_ADMIN_PASSWORD=$SEMAPHORE_ADMIN_PASSWORD
+      - SEMAPHORE_ADMIN_NAME={{ admin_name }}
+      - SEMAPHORE_ADMIN_EMAIL={{ admin_email }}
+      - SEMAPHORE_ADMIN={{ admin_login }}
+    volumes:
+      - type: bind
+        source: /mnt/docker/semaphore/config.json
+        target: /home/semaphore/config.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      traefik:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.semaphore.rule=Host(`{{ semaphore_host_header }}`)"
+      - "traefik.http.routers.semaphore.entrypoints=websecure"
+      - "traefik.http.routers.semaphore.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.semaphore.service=semaphore"
+      - "traefik.http.services.semaphore.loadbalancer.server.port=3000"

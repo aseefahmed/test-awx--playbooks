@@ -1,0 +1,10 @@
+- name: Vmware provisioning compatibility part 1
+  ansible.builtin.set_fact:
+   # This is so that the role could be used both after vmware Linux provisioning and separately
+   instance_name: '{{ vmware_vmname | default(inventory_hostname) }}'
+
+- name: Vmware provisioning compatibility part 2
+  ansible.builtin.set_fact:
+   # If this is after vmware provisioning, instance name does not have domain, so we need to add it
+   # if this is stand-alone, then the supplied name is expected to be FQDN
+   instance_name: "{{ instance_name }}{{ ('.' ~ vmware_domain) if '.' not in instance_name else '' }}"

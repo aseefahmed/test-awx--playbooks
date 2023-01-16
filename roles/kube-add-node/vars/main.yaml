@@ -1,0 +1,33 @@
+kubernetes_environment:
+
+profiles:
+  staging2:
+    endpoint_port: 6443
+    endpoint_hostname: s-k8s-api.barfoot.co.nz
+    bootstrap_node: 192.168.80.81
+    vmware_network: Stage-DMZ-Backend
+    vmware_domain: barfoot.co.nz
+  production2:
+    endpoint_port: 6443
+    endpoint_hostname: p-k8s-api.barfoot.co.nz
+    bootstrap_node: 192.168.8.81
+    vmware_network: DMZ Back End
+    vmware_domain: barfoot.co.nz
+  identity:
+    endpoint_port: 6443
+    endpoint_hostname: p-k8s-identity.barfoot.co.nz
+    bootstrap_node: 192.168.11.80
+    vmware_network: Identity
+    vmware_domain: barfoot.co.nz
+  stagingidentity:
+    endpoint_port: 6443
+    endpoint_hostname: s-k8s-identity.barfoot.co.nz
+    bootstrap_node: 192.168.110.80
+    vmware_network: Staging-Identity
+    vmware_domain: barfoot.co.nz
+  test:
+    endpoint_port: 6443
+    endpoint_hostname: t-k8s.barfoot.co.nz
+    bootstrap_node: 192.168.80.101
+    vmware_network: Stage-DMZ-Backend
+    vmware_domain: barfoot.co.nz

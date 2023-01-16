@@ -1,0 +1,8 @@
+vault_address: https://vault.barfoot.co.nz
+restic_repository_prefix: 's3:minio-02.barfoot.co.nz/vm-backups'
+vault_restic_secret_mount: Production
+vault_restic_path_prefix: "Infrastructure/restic/vm-backups"
+vault_engine_version: 2
+apply_target_path: temporary value
+vcenter_server: 192.168.200.85
+vmware_netmask: 255.255.255.0

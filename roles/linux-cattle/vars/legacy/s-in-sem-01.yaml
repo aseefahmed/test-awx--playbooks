@@ -1,0 +1,158 @@
+vmware_vmname: s-in-sem-01
+vmware_domain: barfoot.co.nz
+vmware_network: Admin Network
+vmware_ip: 192.168.6.20
+vmware_team: Infrastructure
+vmware_annotation: Semaphore PoC instance
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "500"
+vmware_folder: /WIP/Andrew
+vmware_datacentre: DC02
+vmware_datastore: DC02-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+email_sender: noreply@barfoot.co.nz
+email_host: mta.barfoot.co.nz
+email_port: "587"
+semaphore_host_header: semaphore.barfoot.co.nz
+ldap_server: btdc01.barfoot.co.nz:636
+traefik_tag: v2.7.1
+postgres_tag: 14.3
+semaphore_tag: v2.8.67
+admin_login: admin
+admin_name: Barfoot Infrastucture
+admin_email: infrastructure@barfoot.co.nz
+
+secrets:
+- secret_mount: Production
+  secret_path: Infrastructure/cloudflare/cert-manager
+  secret_key: token
+  engine_version: "2"
+  variable_name: cloudflare_token
+- secret_mount: Production
+  secret_path: Shared/active-directory/svc-minio-ldap
+  secret_key: password
+  engine_version: "2"
+  variable_name: ldap_bindpassword
+- secret_mount: Production
+  secret_path: Shared/active-directory/svc-minio-ldap
+  secret_key: dn
+  engine_version: "2"
+  variable_name: ldap_binddn
+- secret_mount: Production
+  secret_path: Infrastructure/telegram/devops1
+  secret_key: token
+  engine_version: "2"
+  variable_name: telegram_token
+- secret_mount: Production
+  secret_path: Infrastructure/telegram/devops1
+  secret_key: chat_id
+  engine_version: "2"
+  variable_name: telegram_chat
+- secret_mount: Production
+  secret_path: Infrastructure/Mta/semaphore
+  secret_key: email
+  engine_version: "2"
+  variable_name: email_username
+- secret_mount: Production
+  secret_path: Infrastructure/Mta/semaphore
+  secret_key: password
+  engine_version: "2"
+  variable_name: email_password
+- secret_mount: Production
+  secret_path: Infrastructure/semaphore/s-in-sem-01.barfoot.co.nz
+  secret_key: access_key_encryption
+  engine_version: "2"
+  variable_name: access_key_encryption
+- secret_mount: Production
+  secret_path: Infrastructure/semaphore/s-in-sem-01.barfoot.co.nz/admin
+  secret_key: password
+  engine_version: "2"
+  variable_name: admin_password
+- secret_mount: Production
+  secret_path: Infrastructure/semaphore/s-in-sem-01.barfoot.co.nz
+  secret_key: cookie_encryption
+  engine_version: "2"
+  variable_name: cookie_encryption
+- secret_mount: Production
+  secret_path: Infrastructure/semaphore/s-in-sem-01.barfoot.co.nz
+  secret_key: cookie_hash
+  engine_version: "2"
+  variable_name: cookie_hash
+- secret_mount: Production
+  secret_path: Infrastructure/semaphore/s-in-sem-01.barfoot.co.nz
+  secret_key: postgres_password
+  engine_version: "2"
+  variable_name: postgres_password
+
+git_apply:
+- name: Copy configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/semaphore
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: init script
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/semaphore
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: init.sh
+  apply_command: bash "{{ apply_target_path }}"
+- name: docker-compose
+  # This is the git repo with your manifests. Use git protocol, not https
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  # This is the directory inside the repo (without leading slash) where the manifests are
+  git_directory: blueprints/docker/semaphore
+  # This is the private key for the git repo
+  git_private_key: "{{ git_private_key }}"
+  # This specifies branch/tag/commit hash to switch to after cloning
+  git_version: "{{ git_version }}"
+  # This is where redndered manifest tempaltes end up
+  manifests_target_directory: ~/manifests_rendered
+  # This specifies if we want to get manifests from subfolders too
+  manifests_recurse: Yes
+  # Search pattern for the manifests like *.yml
+  manifests_patterns: docker-compose.yaml
+  # This is the command executed on the target to apply the file
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+- name: Restore backups
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/semaphore
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: restore_backup.sh
+  apply_command: bash "{{ apply_target_path }}"
+
+#mode: setup_backup
+#mode: no_persistance
+mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker/postgres/backup
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script: ~/manifests_rendered/backup/pre-backup.sh
+#  post_backup_script:
+# used in restore mode
+restic_snapshot_to_restore: latest

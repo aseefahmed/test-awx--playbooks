@@ -1,0 +1,58 @@
+- name: Read backup paths
+  hashivault_read:
+    mount_point: "{{ vault_restic_secret_mount }}"
+    secret: "{{ vault_restic_path_prefix }}/{{ inventory_hostname }}"
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: backup_config
+  delegate_to: localhost
+- name: Convert backup paths
+  ansible.builtin.shell: set -o pipefail && ("{{ backup_config.value.backup_paths }}" -split "," | %{ $_.trim()}) -join " "
+  args:
+    executable: /usr/local/bin/pwsh
+  register: converted_backup_paths
+- name: Pre-backup scripts
+  loop: "{{ pre_backup }}"
+  ansible.builtin.command: "{{ backup_config.value[pre_script_name ~ '_shell']  | default('bash') }} {{ backup_config.value[pre_script_name] }}"
+  become: true
+  when: pre_script_name in backup_config.value and backup_config.value[pre_script_name]
+  loop_control:
+    loop_var: pre_script_name
+- name: Perform restic backup - no exclusions
+  become: true
+  ansible.builtin.command: restic backup {{ converted_backup_paths.stdout }}
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository_prefix }}/{{ backup_config.value.repository_suffix if backup_config.value.repository_suffix is defined and backup_config.value.repository_suffix else inventory_hostname }}"
+    RESTIC_PASSWORD: "{{ backup_config.value.password }}"
+    AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+  when: backup_config.value.exclusion_paths is not defined and skip_restic != "true"
+- name: Perform restic backup - with exclusions
+  become: true
+  ansible.builtin.command: restic backup {{ converted_backup_paths.stdout }} --exclude '{{ backup_config.value.exclusion_paths }}'
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository_prefix }}/{{ backup_config.value.repository_suffix if backup_config.value.repository_suffix is defined and backup_config.value.repository_suffix else inventory_hostname }}"
+    RESTIC_PASSWORD: "{{ backup_config.value.password }}"
+    AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+  when: backup_config.value.exclusion_paths is defined and backup_config.value.exclusion_paths and skip_restic != "true"
+- name: Post-backup scripts
+  loop: "{{ post_backup }}"
+  ansible.builtin.command: "{{ backup_config.value[post_script_name ~ '_shell']  | default('bash') }} {{ backup_config.value[post_script_name] }}"
+  become: true
+  when: post_script_name in backup_config.value and backup_config.value[post_script_name]
+  loop_control:
+    loop_var: post_script_name
+- name: Apply restic retention policies
+  become: true
+  ansible.builtin.command: restic forget --prune {{ restic_forget_keys }}
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository_prefix }}/{{ backup_config.value.repository_suffix if backup_config.value.repository_suffix is defined and backup_config.value.repository_suffix else inventory_hostname }}"
+    RESTIC_PASSWORD: "{{ backup_config.value.password }}"
+    AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+  when: skip_restic != "true"

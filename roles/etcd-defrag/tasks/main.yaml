@@ -1,0 +1,6 @@
+- name: Defrag etcd
+  loop: "{{ defrag_targets }}"
+  ansible.builtin.command: kubectl --kubeconfig /etc/kubernetes/admin.conf exec etcd-{{ item }} -n kube-system -- etcdctl --cacert /etc/kubernetes/pki/etcd/ca.crt --cert /etc/kubernetes/pki/etcd/peer.crt --key /etc/kubernetes/pki/etcd/peer.key defrag
+  become: true
+  delegate_to: "{{ master }}"
+  run_once: true

@@ -1,0 +1,4 @@
+# These are credentials used in staging MTA only to authenticated againt mailtrap
+# Users can select which mailtrap mailbox the email endups in but specifying the sender field
+
+{{ sasl_passwd }}

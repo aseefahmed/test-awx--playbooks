@@ -1,0 +1,8 @@
+- name: Include role
+  ansible.builtin.include_role:
+    name: select-subnet
+  vars:
+    ip: "{{ vmware_ip }}"
+- name: Set fact
+  ansible.builtin.set_fact:
+    vmware_network: "{{ detected_network.stdout }}"

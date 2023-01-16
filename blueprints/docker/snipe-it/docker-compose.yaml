@@ -1,0 +1,80 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --providers.file.filename=/data/traefik.toml
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik
+      - ./traefik.toml:/data/traefik.toml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redirs.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirs.entrypoints=web"
+      - "traefik.http.routers.redirs.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    logging:
+      driver: local
+  snipe-it:
+    image: lscr.io/linuxserver/snipe-it:{{ snipeit_tag }}
+    container_name: snipe-it
+    restart: unless-stopped
+    depends_on:
+      - snipe-mysql
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - APP_URL=https://snipe-it.barfoot.co.nz
+      - MYSQL_PORT_3306_TCP_ADDR=snipe-mysql
+      - MYSQL_PORT_3306_TCP_PORT=3306
+      - MYSQL_DATABASE=snipeit
+      - MYSQL_USER=snipeit
+      - MYSQL_PASSWORD={{ snipeit_mysql_password }}
+      - TZ=Pacific/Auckland
+    volumes:
+      - /mnt/docker/snipeit:/config
+    #ports:
+    #  - 8080:80
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.snipeit.rule=Host(`{{ snipeit_host }}`)"
+      - "traefik.http.routers.snipeit.entrypoints=websecure"
+      - "traefik.http.routers.snipeit.tls.certresolver=letsencrypt"
+      - "traefik.http.services.snipeit.loadbalancer.server.port=80"
+      # uncomment these two line when you are using staging LE and it does not let you in because of HSTS
+      #- "traefik.http.routers.vault.middlewares=testHeader"
+      #- "traefik.http.middlewares.testHeader.headers.isDevelopment=true"
+    logging:
+      driver: local
+  snipe-mysql:
+    container_name: snipe-mysql
+    restart: unless-stopped
+    image: mysql:{{ mysql_tag }}
+    volumes:
+      - /mnt/docker/snipeitsql:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD={{ snipeit_mysql_root_password }}
+      - MYSQL_DATABASE=snipeit
+      - MYSQL_USER=snipeit
+      - MYSQL_PASSWORD={{ snipeit_mysql_password }}
+    logging:
+      driver: local

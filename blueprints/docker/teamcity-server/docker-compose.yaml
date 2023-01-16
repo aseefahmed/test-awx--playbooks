@@ -1,0 +1,60 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --providers.file.filename=/data/traefik.toml
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik   
+      - ./traefik.toml:/data/traefik.toml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redirs.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirs.entrypoints=web"
+      - "traefik.http.routers.redirs.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    logging:
+      driver: local
+  teamcity:
+    image: jetbrains/teamcity-server:{{ teamcity_tag }}
+    container_name: teamcity-server
+    restart: unless-stopped
+    environment:
+      - TZ=Pacific/Auckland
+    ports:
+      - "8111:8111"
+    volumes:
+      - /mnt/docker/teamcity/datadir:/data/teamcity_server/datadir
+      - /mnt/docker/teamcity/logs:/opt/teamcity/logs
+    depends_on:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.teamcity.rule=Host(`{{ teamcity_host }}`) || Host(`{{ teamcity_artifacts_host }}`)"
+      - "traefik.http.routers.teamcity.entrypoints=websecure"
+      - "traefik.http.routers.teamcity.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.teamcity.service=teamcity"
+      - "traefik.http.services.teamcity.loadbalancer.server.port=8111"
+    logging:
+      driver: local

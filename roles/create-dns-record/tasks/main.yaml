@@ -1,0 +1,31 @@
+- name: Create DNS A Record
+  become: true
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+  win_shell: |
+    $ErrorActionPreference = "Stop"
+    $domain = "{{ dns_domain }}"
+    $name = "{{ dns_name }}"
+    $ip = "{{ dns_ip }}"
+    $dc = "{{ dns_dc }}"
+
+    $record = Get-DnsServerResourceRecord $domain $name -RRType A -ComputerName $dc -ErrorAction SilentlyContinue
+    if ($record) {
+        "Record already exists for $name" | Write-Host
+        if ($record.RecordData.IPv4Address -eq $ip) {
+            "Ip is already set to $ip"
+        } else {
+            "Ips differ. Requested: $ip, existing: $($record.RecordData.IPv4Address)" | Write-Host
+            "Removing old record..." | Write-Host
+            $record | Remove-DnsServerResourceRecord $domain -ComputerName $dc -Force
+            "Creating new record..." | Write-Host
+            Add-DnsServerResourceRecordA $domain $name $ip -ComputerName $dc
+        }
+    } else {
+        "No record found for $name, creating..." | Write-Host
+        Add-DnsServerResourceRecordA $domain $name $ip -ComputerName $dc
+    }
+    "Done processing DNS record" | Write-Host
+  delegate_facts: true
+  delegate_to: "{{ windows_host }}"

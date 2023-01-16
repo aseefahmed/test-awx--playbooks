@@ -1,0 +1,38 @@
+- name: test tagging
+  hosts: target
+  gather_facts: false
+  vars:
+    vmware_vmname: d-in-mgmt-01
+    vmware_folder: Development
+    vmware_datacentre: DC02
+  tasks:
+  # - name: Tag new VM with kubernetes Custom Attributes
+  #  vmware_guest_custom_attributes:
+  #    datacenter: "{{ vmware_datacentre }}"
+  #    folder: "{{ vmware_folder }}"
+  #    hostname: "{{ vcenter_server }}"
+  #    name: "{{ vmware_vmname }}"
+  #    password: "{{ vcenter_password }}"
+  #    username: "{{ vcenter_username }}"
+  #    validate_certs: false
+  #    attributes:
+  #    - name: "Kubernetes"
+  #      value: "True"
+  #  delegate_to: localhost
+    - name: Tag new VM with kubernetes Custom Attributes (PowerCLI)
+      ansible.builtin.shell: |
+        $ErrorActionPreference = "Stop"
+        $server = Connect-VIServer -Server "{{ vcenter_server }}" -Password $env:VMWARE_PASSWORD -User $env:VMWARE_USER
+        $dc = Get-Datacenter "{{ vmware_datacentre }}"
+        $base = Get-Folder vm -Type VM -NoRecursion -Location $dc
+        "{{ vmware_folder }}".trim("/").split("/") | %{
+          $base = Get-Folder $_ -Type VM -NoRecursion -Location $base
+        }
+        $vm = Get-VM -Name "{{ vmware_vmname }}" -Location $base
+        $vm | Set-Annotation -CustomAttribute Kubernetes -Value "True"
+      args:
+        executable: /usr/bin/pwsh
+      environment:
+        VMWARE_PASSWORD: "{{ vcenter_password }}"
+        VMWARE_USER: "{{ vcenter_username }}"
+      delegate_to: localhost

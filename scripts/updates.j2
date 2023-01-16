@@ -1,0 +1,14 @@
+vm,upd_number
+{% for h in ansible_play_batch %}
+{% if hostvars[h]['upd'] is defined %}
+{% set upd = hostvars[h]['upd'] %}
+{% else %}
+{% set upd = '' %}
+{% endif %}
+{% if hostvars[h]['vmname'] is defined %}
+{% set vmname = hostvars[h]['vmname'] %}
+{% else %}
+{% set vmname = '' %}
+{% endif %}
+{{ vmname }},{{ upd }}
+{% endfor %}

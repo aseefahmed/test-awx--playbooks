@@ -1,0 +1,11 @@
+---
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: awx
+  namespace: {{ awx_namespace }}
+spec:
+  ingress_type: Ingress
+  hostname: {{ host }}
+  ingress_annotations: "cert-manager.io/cluster-issuer: letsencrypt"
+  ingress_tls_secret: "awx-le-certificate"

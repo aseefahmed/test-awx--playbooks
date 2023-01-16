@@ -1,0 +1,110 @@
+vmware_vmname: p-ap-awx-01
+vmware_domain: barfoot.co.nz
+vmware_network: Admin Network
+vmware_ip: 192.168.6.5
+vmware_team: Infrastructure
+vmware_annotation: Stand-by AWX Instance
+vmware_template_name: template-ubuntu-2204-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 8
+vmware_disk_gb: "32"
+vmware_folder: /Production/K3s
+vmware_datacentre: DC01
+vmware_datastore: DC01-SSD-05
+
+#vmware_custom_attributes:
+#- ResticSchedule1
+
+platform_roles:
+- k3s
+
+# Variable for platform
+dns_zones:
+- barfoot.co.nz
+k3s_version: v1.25.4+k3s1
+cert_manager_chart_version: "1.10.1"
+cert_manager_verifier_version: "0.2.0"
+
+# Variables for the blueprint
+#
+backup_pv: restic-backup-volume
+backup_size: 500Mi
+ee_storage_size: 500Mi
+local_stoarage_path: /var/lib/rancher/k3s/storage
+storage_class: local-path
+backup_pvc: restic-backup-claim
+awx_namespace: awx
+host: awx.barfoot.co.nz
+backup_name: restic-backup
+
+secrets:
+- secret_mount: Production
+  secret_path: Infrastructure/cloudflare/cert-manager
+  secret_key: token
+  engine_version: "2"
+  variable_name: cloudflare_token
+git_apply:
+- name: configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/kubernetes/awx
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: init.ps1
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/kubernetes/awx
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: init.ps1
+  apply_command: pwsh "{{ apply_target_path }}"
+- name: kubectl
+  # This is the git repo with your manifests. Use git protocol, not https
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  # This is the directory inside the repo (without leading slash) where the manifests are
+  git_directory: blueprints/kubernetes/awx
+  # This is the private key for the git repo
+  git_private_key: "{{ git_private_key }}"
+  # This specifies branch/tag/commit hash to switch to after cloning
+  git_version: "{{ git_version }}"
+  # This is where redndered manifest tempaltes end up
+  manifests_target_directory: ~/manifests_rendered
+  # This specifies if we want to get manifests from subfolders too
+  manifests_recurse: No
+  # Search pattern for the manifests like *.yaml
+  manifests_patterns: "*.yaml"
+  # This is the command executed on the target to apply the file
+  apply_command: kubectl apply -f "{{ apply_target_path }}"
+- name: post-restore.ps1
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/kubernetes/awx
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: post-restore.ps1
+  apply_command: pwsh "{{ apply_target_path }}"
+
+#mode: setup_backup
+mode: restore
+#mode: no_persistance
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /var/lib/rancher/k3s/storage/restic-backup-volume/backup
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script: ~/manifests_rendered/backup/pre-backup.ps1
+#  pre_backup_script_shell: pwsh
+#  post_backup_script:
+# used in restore mode
+restic_snapshot_to_restore: latest
+#restic_backup_hostname: p-ap-awx-02

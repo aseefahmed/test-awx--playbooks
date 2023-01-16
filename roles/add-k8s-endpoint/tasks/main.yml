@@ -1,0 +1,66 @@
+- name: Fail when environment is Identity and external is selected
+  ansible.builtin.fail:
+    msg: You have selected an Identity endpoint to be published externally, this is not allowed.
+  when: external == "Yes" and k8s_env == "identity"
+
+- name: Add machine to in-memory inventory_plugins
+  ansible.builtin.add_host:
+    name: "{{ dns_management_host }}"
+    group: new
+    ansible_connection: winrm
+    ansible_winrm_server_cert_validation: ignore
+    ansible_user: "{{winrm_username}}"
+    ansible_password: "{{winrm_password}}"
+    ansible_winrm_transport: ntlm
+    ansible_become_method: runas
+
+- name: Create internal DNS CNAME
+  ansible.builtin.include_role:
+    name: create-dns-record-internal
+  vars:
+    dns_name: "{{ item.name}}"
+    dns_target: "{{item.target}}"
+    dns_type: "cname"
+  loop:
+    - { name: "{{k8s_dns_name}}", target: "{{prod_int_target[k8s_env]}}"}
+    - { name: "stg-{{k8s_dns_name}}", target: "{{staging_int_target[k8s_env]}}"}
+    - { name: "test-{{k8s_dns_name}}", target: "{{staging_int_target[k8s_env]}}"}
+  when: external == "No"
+
+- name: Block of tasks
+  when: external == "Yes" and k8s_env != "identity"
+  block:
+    - name: Create internal DNS CNAME
+      ansible.builtin.include_role:
+        name: create-dns-record-internal
+      vars:
+        dns_name: "{{ item.name}}"
+        dns_target: "{{item.target}}"
+        dns_type: "cname"
+      loop:
+        - { name: "{{k8s_dns_name}}", target: "{{prod_ext_target[k8s_env]}}"}
+        - { name: "stg-{{k8s_dns_name}}", target: "{{staging_ext_target[k8s_env]}}"}
+        - { name: "test-{{k8s_dns_name}}", target: "{{staging_int_target[k8s_env]}}"}
+
+    - name: Create CloudFlare DNS CNAME
+      ansible.builtin.include_role:
+        name: create-dns-record-cloudflare
+      vars:
+        dns_name: "{{ item.name}}"
+        dns_target: "{{item.target}}"
+        dns_type: "cname"
+      loop:
+        - { name: "{{k8s_dns_name}}", target: "{{prod_cf_target}}"}
+        - { name: "stg-{{k8s_dns_name}}", target: "{{staging_cf_target}}"}
+
+    - name: Update F5 external whitelist data group
+      ansible.builtin.include_role:
+        name: add-to-f5-data-group
+      vars:
+        f5_datagroup: "{{datagroup}}"
+        datagroup_item: "{{item.name}}"
+        datagroup_type: "string"
+        f5_environment: "{{item.env}}"
+      loop:
+        - { name: "stg-{{k8s_dns_name}}.barfoot.co.nz", env: "Staging"}
+        - { name: "{{k8s_dns_name}}.barfoot.co.nz", env: "Production"}

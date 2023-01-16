@@ -1,0 +1,17 @@
+# This is the git repo with your files to apply. Use git protocol, not https
+git_repo:
+# This is the directory inside the repo (without leafing slash) where the files to apply are
+git_directory:
+# if "sparse" use sparse checkout
+git_apply_mode: sparse
+# This is the private key for the git repo
+git_private_key:
+# This specifies branch/tag/commit hash to switch to after cloning
+git_version:
+# This specifies if we want to get files from subfolders too
+manifests_recurse: Yes
+# Search pattern for the files to apply like *.yml
+manifests_patterns: "*"
+# These are the variables for your templates. It is recommened to use some prefix so they do not clash with the playbook variables
+extra_vars: []
+apply_command:

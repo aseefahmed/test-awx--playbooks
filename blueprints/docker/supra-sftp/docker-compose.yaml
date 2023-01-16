@@ -1,0 +1,17 @@
+version: '3.7'
+services:
+  sftp:
+    restart: unless-stopped
+    image: atmoz/sftp
+    container_name: sftp
+    volumes:
+    - "/home/stg-supra:/home/stg-supra"
+    - "/home/test-supra:/home/test-supra"
+    - "/etc/ssh/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key"
+    - "/etc/ssh/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key"
+    ports:
+    - "30022:22"
+    environment:
+      SFTP_USERS: "test-supra:{{ test_pass }}:2001:2001:sftp stg-supra:{{ stg_pass }}:2000:2000:sftp"
+    logging:
+      driver: local

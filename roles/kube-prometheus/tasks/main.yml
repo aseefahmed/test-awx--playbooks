@@ -1,0 +1,33 @@
+---
+- name: Lift k8s environment specific variables (unless already set)
+  ansible.builtin.set_fact:
+    "{{ item.key }}": "{{ vars[item.key] if (item.key in vars) and vars[item.key] != None and (vars[item.key]|length>0) else item.value }}"
+    # if a var comes from extra vars (e.g. awx survey) it cannot be overriden by set_fact, so use a new var
+    "{{ item.key ~ '_lifted' }}": "{{ vars[item.key] if (item.key in vars) and vars[item.key] != None and (vars[item.key]|length>0) else item.value }}"
+  loop: "{{ profiles[kubernetes_environment] | dict2items }}"
+- name: Write etcd client secret secret into the cluster
+  become: true
+  ansible.builtin.shell: |
+    kubectl -n monitoring create secret generic etcd-client-cert --from-file=/etc/kubernetes/pki/etcd/ca.crt --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.crt --from-file=/etc/kubernetes/pki/etcd/healthcheck-client.key
+  delegate_to: "{{ kubectl_node_lifted }}"
+- name: Generate or read password from vault for prometheus grafana admin
+  ansible.builtin.include_role:
+    name: get-or-create-vault-password
+  vars:
+    secret_mount: "{{ vault_secret_mount }}"
+    secret_path: "{{ vault_prometheus_path_prefix }}/admin"
+    secret_key: "password"
+    version: "{{ vault_engine_version }}"
+- name: Remeber the password for future use in the play
+  ansible.builtin.set_fact:
+    grafana_password: "{{ vault_password.value }}"
+- name: Template prometheus helm values file to remote
+  ansible.builtin.template:
+    src: values.yaml
+    dest: prometheus-values.yaml
+  delegate_to: "{{ kubectl_node_lifted }}"
+- name: Install prometheus
+  ansible.builtin.shell: |
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+    helm install prometheus prometheus-community/kube-prometheus-stack --version {{ prometheus_helm_version }} -n monitoring -f prometheus-values.yaml
+  delegate_to: "{{ kubectl_node_lifted }}"

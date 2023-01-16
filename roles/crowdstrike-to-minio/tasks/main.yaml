@@ -1,0 +1,29 @@
+- name: Run the script
+  ansible.builtin.script: downolad-falcon.ps1
+  delegate_to: localhost
+- name: Ensure we have minio client
+  ansible.builtin.get_url:
+    url: https://dl.min.io/client/mc/release/linux-amd64/mc
+    dest: /tmp/mc
+    mode: +x
+  delegate_to: localhost
+- name: Upload windows sensor to minio [https://{{ minio_server }}/installers/falcon-sensor.exe]
+  no_log: true
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp falcon-sensor.exe bt/installs/falcon-sensor.exe
+  delegate_to: localhost
+- name: Upload deb package to minio [https://{{ minio_server }}/installers/falcon-sensor.deb]
+  no_log: true
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp falcon-sensor.deb bt/installs/falcon-sensor.deb
+  delegate_to: localhost
+- name: Upload windows sensor version minio [https://{{ minio_server }}/installers/falcon-sensor.exe]
+  no_log: true
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp windows.version bt/installs/falcon-sensor-windows-version.txt
+  delegate_to: localhost
+- name: Upload deb package version to minio [https://{{ minio_server }}/installers/falcon-sensor.deb]
+  no_log: true
+  ansible.builtin.shell: |
+    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp ubuntu.version bt/installs/falcon-sensor-ububtu-version.txt
+  delegate_to: localhost

@@ -1,0 +1,4 @@
+vault_addres: https://vault.barfoot.co.nz
+vault_path_prefix: Infrastructure/Windows
+vmware_netmask: 255.255.255.0
+vcenter_server: 192.168.200.85

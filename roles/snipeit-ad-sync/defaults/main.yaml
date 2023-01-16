@@ -1,0 +1,16 @@
+# These credentials normally come from AWX credentials
+winrm_username:
+winrm_password:
+
+# Host to run powershell on. This host has to be in the inventory and has to have the correct WinRM settings
+# Search https://barfoot.atlassian.net/wiki/spaces/IT/pages/117572772/AWX+Setup+Upgrade+notes for "winrm setting"
+windows_host: p-mg-bco-01.barfoot.co.nz
+
+ad_sync_user: "svc-snipeit-ad-ro"
+vault_engine_version: 2
+vault_address: https://vault.barfoot.co.nz
+vault_mount_point: "Production"
+vault_path_prefix_snipeit: "Infrastructure/snipeit/{{ inventory_hostname }}"
+vault_key_snipeit: "api_token"
+vault_path_prefix_ad: "Shared/active-directory/{{ ad_sync_user }}"
+vault_key_ad: "password"

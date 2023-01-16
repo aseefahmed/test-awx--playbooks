@@ -1,0 +1,139 @@
+- name: Retreive environment prefix from the inventory hostname
+  ansible.builtin.set_fact:
+    environment_prefix: "{{ inventory_hostname | regex_replace(environment_pattern, '\\1') }}"
+  failed_when: not (inventory_hostname | regex_search(environment_pattern))
+
+- name: Lift environment variable to the top level
+  ansible.builtin.set_fact: {"{{ item.key }}": "{{ item.value }}"}
+  with_dict: "{{ environment_map[environment_prefix] }}"
+
+- name: Read postgres management password from vault
+  hashivault_read:
+    mount_point: "{{ vault_engine }}"
+    secret: "{{ vault_path_prefix }}{{ inventory_hostname }}/postgres"
+    key: "password"
+    version: 2
+  environment:
+    VAULT_ADDR: https://vault.barfoot.co.nz
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: 'postgres_password'
+  delegate_to: localhost
+
+- name: Generate or read password from vault for {{ database_name }} user
+  ansible.builtin.include_role:
+    name: get-or-create-vault-password
+  vars:
+    secret_mount: "{{ vault_engine }}"
+    secret_path: "{{ vault_path_prefix }}{{ inventory_hostname }}/{{ database_name }}"
+    secret_key: "password"
+    version: 2
+
+- name: Remeber the db owner password for future use in the play
+  ansible.builtin.set_fact:
+    dbowner_password: "{{ vault_password.value }}"
+
+- name: Create user {{ database_name }}
+  community.postgresql.postgresql_user:
+    name: "{{ database_name }}"
+    password: "{{ dbowner_password }}"
+    login_password: "{{ postgres_password.value }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Generate or read password from vault for {{ database_name }}_app user
+  ansible.builtin.include_role:
+    name: get-or-create-vault-password
+  vars:
+    secret_mount: "{{ vault_engine }}"
+    secret_path: "{{ vault_path_prefix }}{{ inventory_hostname }}/{{ database_name }}_app"
+    secret_key: "password"
+    version: 2
+
+- name: Create user {{ database_name }}_app
+  community.postgresql.postgresql_user:
+    name: "{{ database_name }}_app"
+    groups:
+      - "{{ database_name }}"
+    role_attr_flags: NOINHERIT
+    password: "{{ vault_password.value }}"
+    login_password: "{{ postgres_password.value }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Generate or read password from vault for {{ database_name }}_ro user
+  ansible.builtin.include_role:
+    name: get-or-create-vault-password
+  vars:
+    secret_mount: "{{ vault_engine }}"
+    secret_path: "{{ vault_path_prefix }}{{ inventory_hostname }}/{{ database_name }}_ro"
+    secret_key: "password"
+    version: 2
+
+- name: Create user {{ database_name }}_ro
+  community.postgresql.postgresql_user:
+    name: "{{ database_name }}_ro"
+    password: "{{ vault_password.value }}"
+    login_password: "{{ postgres_password.value }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Create database {{ database_name }}
+  community.postgresql.postgresql_db:
+    name: "{{ database_name }}"
+    owner: "{{ database_name }}"
+    encoding: UTF-8
+    lc_collate: en_US.utf8
+    lc_ctype: en_US.utf8
+    login_password: "{{ postgres_password.value }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Give the database owner ownership over the public schema
+  community.postgresql.postgresql_owner:
+    db: "{{ database_name }}"
+    new_owner: "{{ database_name }}"
+    obj_name: public
+    obj_type: schema
+    login_password: "{{ postgres_password.value }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Revoke all priveledges on schema public from public
+  community.postgresql.postgresql_privs:
+    database: "{{ database_name }}"
+    state: absent
+    privs: ALL
+    type: schema
+    objs: public
+    roles: public
+    login_user: "{{ database_name }}"
+    login_password: "{{ dbowner_password }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: Grant usage priveledge on schema public to {{ database_name }}_ro
+  community.postgresql.postgresql_privs:
+    database: "{{ database_name }}"
+    privs: USAGE
+    type: schema
+    objs: public
+    roles: "{{ database_name }}_ro"
+    login_user: "{{ database_name }}"
+    login_password: "{{ dbowner_password }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost
+
+- name: ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT select ON TABLES,SEQUENCES TO {{ database_name }}_ro
+  community.postgresql.postgresql_privs:
+    database: "{{ database_name }}"
+    schema: public
+    privs: SELECT
+    type: default_privs
+    objs: TABLES,SEQUENCES
+    roles: "{{ database_name }}_ro"
+    login_user: "{{ database_name }}"
+    login_password: "{{ dbowner_password }}"
+    login_host: "{{ inventory_hostname }}"
+  delegate_to: localhost

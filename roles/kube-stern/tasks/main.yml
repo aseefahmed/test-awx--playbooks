@@ -1,0 +1,18 @@
+---
+- name: Install stern
+  ansible.builtin.shell: |
+    set -o pipefail
+    STERN_URL=$(curl -s https://api.github.com/repos/stern/stern/releases/latest | grep "browser_download_url.*linux_amd64" | cut -d : -f 2,3 | tr -d \")
+    curl -sL $STERN_URL -o stern.tar.gz
+    STERN_TEMP=$(mktemp -d)
+    tar -C $STERN_TEMP -xf stern.tar.gz
+    sudo mv "$STERN_TEMP/stern" /usr/local/bin
+    rm -rf $STERN_TEMP
+    rm -f stern.tar.gz
+- name: Enable stern completion
+  become: true
+  ansible.builtin.shell: |
+    mkdir -p /etc/bash_completion.d
+    stern --completion=bash >/etc/bash_completion.d/stern
+  args:
+    warn: false

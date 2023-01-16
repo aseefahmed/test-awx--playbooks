@@ -1,0 +1,83 @@
+- name: Install Microsoft Management Agent
+  hosts: installmma
+  gather_facts: false
+  vars:
+    win_oms_path: C:\Program Files\Microsoft Monitoring Agent\Agent\MonitoringHost.exe
+
+  tasks:
+    - name: Windows
+      when: "'win' in group_names"
+      tags: windows
+      block:
+        - name: Windows - Check for existing install
+          win_stat:
+            path: "{{win_oms_path}}"
+          register: winfile_info
+
+        - name: Windows - Get MMA Version
+          win_file_version:
+            path: "{{win_oms_path}}"
+          register: win_mma_file_version
+          when: winfile_info.stat.exists == true
+
+        - name: Windows - Set Install Type to Upgrade
+          ansible.builtin.set_fact:
+            install_type: upgrade
+          when: winfile_info.stat.exists == true and
+            win_mma_file_version.win_file_version.product_version != win_oms_ver
+
+        - name: Windows - Set Install Type to Install
+          ansible.builtin.set_fact:
+            install_type: install
+          when: winfile_info.stat.exists != true
+
+        - name: Windows - Create local temporary directory
+          win_tempfile:
+            state: directory
+          register: win_tempdir
+          when: install_type is defined
+
+        - name: Windows - Download Management Agent
+          win_ansible.builtin.get_url:
+            url: https://go.microsoft.com/fwlink/?LinkId=828603
+            dest: "{{win_tempdir.path}}/MMASetup-AMD64.exe"
+          when: install_type is defined
+
+        - name: Windows - Extract Management Agent files
+          win_command: "{{win_tempdir.path}}/MMASetup-AMD64.exe /t:{{win_tempdir.path}} /C"
+          when: install_type is defined
+
+        - name: Windows - Install Microsoft Management Agent
+          win_package:
+            path: "{{win_tempdir.path}}/Setup.exe"
+            product_id: '{465B6F56-D749-4439-8A83-801F46F62B74}'
+            arguments: /qn NOAPM=1 ADD_OPINSIGHTS_WORKSPACE=1 OPINSIGHTS_WORKSPACE_AZURE_CLOUD_TYPE=0 OPINSIGHTS_WORKSPACE_ID="{{ azure_workspace_id }}" OPINSIGHTS_WORKSPACE_KEY="{{ azure_workspace_key }}" OPINSIGHTS_PROXY_URL="{{ wsus_address }}" AcceptEndUserLicenseAgreement=1
+          when: install_type is defined and
+            install_type == "install"
+
+        - name: Windows - Upgrade Microsoft Management Agent
+          win_package:
+            path: "{{win_tempdir.path}}/Setup.exe"
+            product_id: '{465B6F56-D749-4439-8A83-801F46F62B74}'
+            arguments: /qn /l*v c:\AgentUpgrade.log AcceptEndUserLicenseAgreement=1
+          when: install_type is defined and
+            install_type == "upgrade"
+
+        - name: Windows - Cleanup
+          win_file:
+            path: "{{win_tempdir.path}}"
+            state: absent
+          when: install_type is defined
+
+        - name: Update registry path proxy url
+          ansible.windows.win_regedit:
+            path: HKLM:\SYSTEM\ControlSet001\Services\HealthService\Parameters
+            name: Http Connection Proxy Url
+            data: "{{ wsus_address }}"
+          when: install_type is defined
+
+        - name: Restart Microsoft Monitoring Agent
+          ansible.windows.win_service:
+            name: HealthService
+            state: restarted
+          when: install_type is defined

@@ -1,0 +1,81 @@
+vmware_template_name:
+kubernetes_environment:
+calico_helm_version: v3.24.5
+nfs_genesha_image: k8s.gcr.io/sig-storage/nfs-provisioner:v3.0.0
+traefik_tag: v2.9.4
+
+profiles:
+  staging2:
+    endpoint_port: 6443
+    endpoint_hostname: s-k8s-api.barfoot.co.nz
+    oidc_issuer_url: https://accounts.google.com
+    oidc_username_claim: email
+    oidc_client_id: "427139828421-askrrghc5l8fjgef3c579ng2b5cnh012.apps.googleusercontent.com"
+    pod_cidr: "10.244.0.0/16"
+    prometheus_host: stg-prometheus-k8s2.barfoot.co.nz
+    alertmanager_host: stg-alertmanager-k8s2.barfoot.co.nz
+    grafana_host: stg-grafana-k8s2.barfoot.co.nz
+    vault_secret_mount: Staging
+    f5_ip: "192.168.80.150"
+    vmware_network: Stage-DMZ-Backend
+    vmware_domain: barfoot.co.nz
+  production2:
+    endpoint_port: 6443
+    endpoint_hostname: p-k8s-api.barfoot.co.nz
+    oidc_issuer_url: https://accounts.google.com
+    oidc_username_claim: email
+    oidc_client_id: "427139828421-askrrghc5l8fjgef3c579ng2b5cnh012.apps.googleusercontent.com"
+    pod_cidr: "10.244.0.0/16"
+    prometheus_host: prometheus-k8s2.barfoot.co.nz
+    alertmanager_host: alertmanager-k8s2.barfoot.co.nz
+    grafana_host: grafana-k8s2.barfoot.co.nz
+    vault_secret_mount: Production
+    f5_ip: "192.168.8.150"
+    vmware_network: DMZ Back End
+    vmware_domain: barfoot.co.nz
+  identity:
+    endpoint_port: 6443
+    endpoint_hostname: p-k8s-identity.barfoot.co.nz
+    oidc_issuer_url: https://accounts.google.com
+    oidc_username_claim: email
+    oidc_client_id: "427139828421-askrrghc5l8fjgef3c579ng2b5cnh012.apps.googleusercontent.com"
+    pod_cidr: "10.244.0.0/16"
+    prometheus_host: prometheus-k8s-id.barfoot.co.nz
+    alertmanager_host: alertmanager-k8s-id.barfoot.co.nz
+    grafana_host: grafana-k8s-id.barfoot.co.nz
+    vault_secret_mount: Production
+    f5_ip: "192.168.11.150"
+    vmware_network: Identity
+    vmware_domain: barfoot.co.nz
+  stagingidentity:
+    endpoint_port: 6443
+    endpoint_hostname: s-k8s-identity.barfoot.co.nz
+    oidc_issuer_url: https://accounts.google.com
+    oidc_username_claim: email
+    oidc_client_id: "427139828421-askrrghc5l8fjgef3c579ng2b5cnh012.apps.googleusercontent.com"
+    pod_cidr: "10.244.0.0/16"
+    prometheus_host: stg-prometheus-k8s-id.barfoot.co.nz
+    alertmanager_host: stg-alertmanager-k8s-id.barfoot.co.nz
+    grafana_host: stg-grafana-k8s-id.barfoot.co.nz
+    vault_secret_mount: Staging
+    f5_ip: "192.168.110.150"
+    vmware_network: Staging-Identity
+    vmware_domain: barfoot.co.nz
+  test:
+    endpoint_port: 6443
+    endpoint_hostname: t-k8s.barfoot.co.nz
+    oidc_issuer_url: https://accounts.google.com
+    oidc_username_claim: email
+    oidc_client_id: "427139828421-askrrghc5l8fjgef3c579ng2b5cnh012.apps.googleusercontent.com"
+    pod_cidr: "10.244.0.0/16"
+    prometheus_host: test-prometheus-k8s.barfoot.co.nz
+    alertmanager_host: test-alertmanager-k8s.barfoot.co.nz
+    grafana_host: test-grafana-k8s.barfoot.co.nz
+    vault_secret_mount: Test
+    f5_ip: "192.168.80.150"
+    vmware_network: Stage-DMZ-Backend
+    vmware_domain: barfoot.co.nz
+
+kubernetes_cluster_admins:
+  - asavinykh@barfoot.co.nz
+  - cfreeman@barfoot.co.nz

@@ -1,0 +1,14 @@
+services:
+  mongo:
+    container_name: mongo
+    image: mongo:{{ mongo_tag }}
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: {{ mongo_initdb_root_username }}
+      MONGO_INITDB_ROOT_PASSWORD: {{ mongo_initdb_root_password }}
+    volumes:
+      - /mnt/docker/mongo/data:/data/db
+    ports:
+      - {{ mongo_port }}:27017
+    logging:
+      driver: local

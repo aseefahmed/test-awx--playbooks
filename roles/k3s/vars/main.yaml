@@ -1,0 +1,18 @@
+# This is the version of k3s to install
+# Look up at https://github.com/k3s-io/k3s/releases
+k3s_version:
+# Lookup at https://artifacthub.io/packages/helm/cert-manager/cert-manager
+cert_manager_chart_version:
+# Lookup at https://github.com/alenkacz/cert-manager-verifier/releases
+cert_manager_verifier_version:
+# Email for LE account
+acme_email: infrastructure@barfoot.co.nz
+# LE server to use
+acme_server: https://acme-v02.api.letsencrypt.org/directory
+# Email for CloudFlare account
+cloudflare_email: infrastructure@barfoot.co.nz
+# CloudFlare token https://cert-manager.io/docs/configuration/acme/dns01/cloudflare/#api-tokens
+cloudflare_token:
+# Selector so that cert-manager does not try to request LE certs for different zones
+dns_zones:
+  - barfoot.co.nz

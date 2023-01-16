@@ -1,0 +1,7 @@
+# https://restic.readthedocs.io/en/latest/060_forget.html#removing-snapshots-according-to-a-policy
+restic_forget_keys: "--keep-last 10 --keep-within-daily 1m"
+pre_backup:
+  - pre_backup_script
+post_backup:
+  - post_backup_script
+skip_restic: "false"

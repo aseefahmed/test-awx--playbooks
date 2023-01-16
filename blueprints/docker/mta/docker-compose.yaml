@@ -1,0 +1,19 @@
+services:
+  postfix:
+    image: registry.barfoot.co.nz/devops/postfix:{{ postfix_tag }}
+    container_name: postfix
+    restart: unless-stopped
+    init: true
+    volumes:
+      - /mnt/docker/postfix/log:/var/log
+      - /mnt/docker/postfix/config:/etc/postfix
+      - /mnt/docker/postfix/sasl2:/etc/sasl2
+      - /mnt/docker/postfix/rsyslog/rsyslog.conf:/etc/rsyslog.conf
+      - /mnt/docker/postfix/logrotate/postfix.conf:/etc/logrotate.d/postfix.conf
+      - /etc/ssl/certs:/etc/ssl/certs
+    environment:
+      - TZ=Pacific/Auckland
+    ports:
+      - 587:587
+    logging:
+      driver: local

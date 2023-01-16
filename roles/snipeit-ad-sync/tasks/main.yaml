@@ -1,0 +1,76 @@
+- name: Get Snipe-IT API Token
+  hashivault_read:
+    mount_point: "{{ vault_mount_point }}"
+    secret: "{{ vault_path_prefix_snipeit }}"
+    key: "{{ vault_key_snipeit }}"
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: snipeit_token
+  delegate_to: localhost
+  no_log: true
+
+- name: Get AD Read-Only User
+  hashivault_read:
+    mount_point: "{{ vault_mount_point }}"
+    secret: "{{ vault_path_prefix_ad }}"
+    key: "{{ vault_key_ad }}"
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: ad_pass
+  delegate_to: localhost
+  no_log: true
+
+- name: Create temporary directory
+  become: true
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+  win_tempfile:
+    state: directory
+  register: tempdir
+  delegate_facts: true
+  delegate_to: "{{ windows_host }}"
+
+- name: Copy script to management server
+  become: true
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+  win_copy:
+    src: files/SyncSnipeITUsers.ps1
+    dest: "{{tempdir.path}}\\"
+  delegate_facts: true
+  delegate_to: "{{ windows_host }}"
+
+- name: Run Snipe-IT AD Sync
+  become: true
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+  environment:
+    SNIPE_AD_PASS: "{{ ad_pass.value }}"
+    SNIPE_TOKEN: "{{ snipeit_token.value }}"
+  win_shell: "{{tempdir.path}}\\SyncSnipeITUsers.ps1 -URL https://snipe-it.barfoot.co.nz -Token $env:SNIPE_TOKEN -ADUsername BARFOOT\\{{ ad_sync_user }} -ADPass $env:SNIPE_AD_PASS"
+  args:
+    executable: pwsh
+  delegate_facts: true
+  delegate_to: "{{ windows_host }}"
+
+- name: Remove temporary directory
+  become: true
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+  win_file:
+    state: absent
+    path: "{{tempdir.path}}"
+  delegate_facts: true
+  delegate_to: "{{ windows_host }}"

@@ -1,0 +1,43 @@
+image:
+  name: traefik
+  tag: {{ traefik_tag }}
+
+deployment:
+  kind: DaemonSet
+  imagePullSecrets:
+   - name: regcred
+
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+volumes:
+- name: traefik
+  mountPath: "/data2"
+  type: configMap
+
+additionalArguments:
+- "--providers.file.filename=/data2/traefik.toml"
+{% if f5_ip != None %}
+- "--entryPoints.websecure.forwardedHeaders.trustedIPs={{ f5_ip }}"
+- "--entryPoints.websecure.http.middlewares=f5-ipwhitelist@file"
+{% endif %}
+
+ports:
+  web: null
+  websecure:
+    port: 9443
+    hostPort: 9443
+    tls:
+      enabled: true
+
+service:
+  enabled: false
+
+nodeSelector: 
+  node-role.kubernetes.io/worker: worker
+
+# This is required due to changes in unified labeling pattern in Traefik helm chart versions 17.x+.
+# It overrides the changes so that the helm upgrade does not fail.
+# https://github.com/traefik/traefik-helm-chart#upgrading-from-16x-to-17x
+instanceLabelOverride: traefik

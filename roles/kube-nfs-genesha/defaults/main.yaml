@@ -1,0 +1,3 @@
+storage_class_name: managed-nfs-storage
+provisioner_name: barfoot.co.nz/nfs
+namespace: nfs-provisioner

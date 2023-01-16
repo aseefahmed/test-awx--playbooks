@@ -1,0 +1,38 @@
+- name: Fetch file to template
+  ansible.builtin.fetch:
+    src: '{{ filepath }}'
+    dest: /tmp
+  register: temp_template
+
+# See https://github.com/ansible/ansible/issues/19084
+- name: Fix up extra vars for template
+  ansible.builtin.set_fact: {"{{ item.key }}": "{{ item.value }}"}
+  with_dict: "{{ extra_vars }}"
+  when: extra_vars is defined
+
+- name: Block
+  block:
+    - name: Remove base path prefix form the template path
+      ansible.builtin.set_fact:
+        path_part: "{{ filepath | regex_replace('^' ~ manifests_directory_stat.stat.path,'') }}"
+    - name: Construct target path for the apply action
+      ansible.builtin.set_fact:
+        apply_target_path: "{{ manifests_target_directory }}{{ path_part }}"
+    - name: Make sure parent folder for the rendered template exists
+      ansible.builtin.file:
+        state: directory
+        path: "{{ apply_target_path | dirname }}"
+    - name: Template file to remote
+      ansible.builtin.template:
+        src: "{{ temp_template.dest }}"
+        dest: "{{ apply_target_path }}"
+      # vars: "{{ extra_vars }}"
+    - name: Apply command '{{ apply_command }}'
+      ansible.builtin.command: "{{ apply_command }}"
+      when: apply_command != None and apply_command
+#  always:
+#  - name: Remove temp fetched file
+#    connection: local
+#    file:
+#      path: /tmp/{{ inventory_hostname }}
+#      state: absent

@@ -1,0 +1,5 @@
+vault_secret_mount: Production
+vault_path_prefix: "Infrastructure/cloudflare/ansible"
+vault_engine_version: 2
+vault_address: https://vault.barfoot.co.nz
+zone_name: barfoot.co.nz

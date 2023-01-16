@@ -1,0 +1,17 @@
+---
+- name: Write registry secret into the cluster
+  ansible.builtin.shell: |
+    kubectl create secret generic regcred --from-file=.dockerconfigjson=dockerconfig.json --type=kubernetes.io/dockerconfigjson -n traefik
+- name: Template traefik helm values file to remote
+  ansible.builtin.template:
+    src: values.yaml
+    dest: traefik-values.yaml
+- name: Template traefik secrets file to remote
+  ansible.builtin.template:
+    src: secret.yaml
+    dest: traefik-secret.yaml
+- name: Install traefik
+  ansible.builtin.shell: |
+    kubectl apply -f traefik-secret.yaml
+    helm repo add traefik https://helm.traefik.io/traefik
+    helm install traefik traefik/traefik -n traefik -f traefik-values.yaml

@@ -1,0 +1,24 @@
+- name: Generate mobaxterm shared sessions from vsphere
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - name: Run the powershell script
+    ansible.builtin.script: scripts/mobaexport.ps1
+    environment:
+      VMWARE_HOST: "{{ vcenter_server }}"
+      VMWARE_PASSWORD: "{{ vcenter_password }}"
+      VMWARE_USER: "{{ vcenter_username }}"
+    changed_when: false
+  - name: Ensure we have minio client
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+  - name: Upload to minio [https://{{ minio_server }}/ansible/{{minio_target_path}}]
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/vsphere.mxtsessions bt/{{minio_target_path}}
+  - name: Upload to minio [https://{{ minio_server }}/ansible/{{minio_target_path2}}] (for debugging)
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/vsphere.mxtsessions bt/{{minio_target_path2}}

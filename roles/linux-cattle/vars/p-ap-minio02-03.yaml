@@ -1,0 +1,149 @@
+vmware_vmname: p-ap-minio02-03
+vmware_domain: barfoot.co.nz
+vmware_network: Admin Network
+vmware_ip: 192.168.6.193
+vmware_team: Infrastructure
+vmware_annotation: Node 3 of Minio S3 storage cluster for infrastructure
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "30"
+vmware_folder: /Production/File Servers
+vmware_datacentre: DC01
+vmware_datastore: DC01-SSD-05
+backup_flag: "true"
+
+vmware_custom_attributes:
+- Btstarcert
+#- ResticSchedule1
+
+platform_roles:
+- add-disk
+- linux-docker
+
+# Variables for the blueprint
+minio_tag: RELEASE.2022-12-07T00-56-37Z
+mc_sub_domain: mc-02
+minio_sub_domain: minio-02
+minio_admin_access_key: administrator
+minio_export: https://p-ap-minio02-0{1...4}.barfoot.co.nz/export
+minio_cluster_mode: "true"
+new_disk_gb: 300
+cert_rotate_schedule: "0 0 * * SUN"
+
+secrets:
+- secret_mount: Production
+  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/administrator
+  secret_key: password
+  engine_version: "2"
+  variable_name: minio_admin_secret_key
+- secret_mount: Production
+  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/vercheck
+  secret_key: password
+  engine_version: "2"
+  variable_name: vercheck_secret_key
+- secret_mount: Production
+  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/teamcity
+  secret_key: password
+  engine_version: "2"
+  variable_name: teamcity_secret_key
+#- secret_mount: Production
+#  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/ansible
+#  secret_key: password
+#  engine_version: "2"
+#  variable_name: ansible_secret_key
+#- secret_mount: Production
+#  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/packer
+#  secret_key: password
+#  engine_version: "2"
+#  variable_name: packer_secret_key
+#- secret_mount: Production
+#  secret_path: Infrastructure/minio/p-ap-minio02.barfoot.co.nz/vm-backups-awx
+#  secret_key: password
+#  engine_version: "2"
+#  variable_name: vm_backups_awx_secret_key
+- secret_mount: Production
+  secret_path: Infrastructure/certs/barfoot.co.nz
+  secret_key: cert
+  engine_version: "2"
+  variable_name: cert
+- secret_mount: Production
+  secret_path: Infrastructure/certs/barfoot.co.nz
+  secret_key: key
+  engine_version: "2"
+  variable_name: cert_key
+
+git_apply:
+- name: Add disk
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/minio-dev
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: add-disk.sh
+  apply_command: bash "{{ apply_target_path }}" /dev/sdb /mnt/data
+- name: configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/minio-dev
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: Copy certs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/minio-dev
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "copy-certs.sh"
+  apply_command: bash "{{ apply_target_path }}"
+- name: docker-compose
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/minio-dev
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: docker-compose.yaml
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+- name: Create cronjob script
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/minio-dev
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: cron-cert-create.sh
+  apply_command: bash "{{ apply_target_path }}"
+#- name: init script
+#  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+#  git_directory: blueprints/docker/minio-dev
+#  git_private_key: "{{ git_private_key }}"
+#  git_version: "{{ git_version }}"
+#  manifests_target_directory: ~/manifests_rendered
+#  manifests_recurse: Yes
+#  manifests_patterns: init.sh
+#  apply_command: bash "{{ apply_target_path }}"
+
+#mode: setup_backup
+mode: no_persistance
+#mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker/postgres/backup
+#  # you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  #repository_suffix:
+#  # pathes to exclude from backup, space separated
+#  #exclusion_paths:
+#  #post_backup_script:
+#  pre_backup_script: ~/manifests_rendered/backup/pre-backup.ps1
+#  pre_backup_script_shell: pwsh
+# used in restore mode
+#restic_snapshot_to_restore: latest

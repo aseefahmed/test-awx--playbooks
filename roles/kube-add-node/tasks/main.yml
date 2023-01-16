@@ -1,0 +1,141 @@
+---
+# This was portworx expiremental set up. I'm leaving it here because I would like to revisit this later
+# - ansible.builtin.import_role:
+#    name: add-disk
+#  vars:
+#    new_disk_gb: 150
+# - ansible.builtin.import_role:
+#    name: add-disk
+#  vars:
+#    new_disk_gb: 32
+#  when: mode == "worker"
+- name: Lift k8s environment specific variables (unless already set)
+  ansible.builtin.set_fact:
+    "{{ item.key }}": "{{ vars[item.key] if (item.key in vars) and vars[item.key] != None and (vars[item.key]|length>0) else item.value }}"
+    # if a var comes from extra vars (e.g. awx survey) it cannot be overriden by set_fact, so use a new var
+    "{{ item.key ~ '_lifted' }}": "{{ vars[item.key] if (item.key in vars) and vars[item.key] != None and (vars[item.key]|length>0) else item.value }}"
+  loop: "{{ profiles[kubernetes_environment] | dict2items }}"
+- name: Import role
+  ansible.builtin.import_role:
+    name: linux-vm
+- name: Tag new VM with kubernetes Custom Attributes (PowerCLI)
+  ansible.builtin.shell: |
+    set -o pipefail
+    $ErrorActionPreference = "Stop"
+    $server = Connect-VIServer -Server "{{ vcenter_server }}" -Password $env:VMWARE_PASSWORD -User $env:VMWARE_USER
+    $dc = Get-Datacenter "{{ vmware_datacentre }}"
+    $base = Get-Folder vm -Type VM -NoRecursion -Location $dc
+    "{{ vmware_folder }}".trim("/").split("/") | %{
+      $base = Get-Folder $_ -Type VM -NoRecursion -Location $base
+    }
+    $vm = Get-VM -Name "{{ vmware_vmname }}" -Location $base
+    $vm | Set-Annotation -CustomAttribute Kubernetes -Value "True"
+  args:
+    executable: /usr/bin/pwsh
+  environment:
+    VMWARE_PASSWORD: "{{ vcenter_password }}"
+    VMWARE_USER: "{{ vcenter_username }}"
+  delegate_to: localhost
+# - name: Tag new VM with kubernetes Custom Attributes
+#  vmware_guest_custom_attributes:
+#    datacenter: "{{ vmware_datacentre }}"
+#    folder: "{{ vmware_folder }}"
+#    hostname: "{{ vcenter_server }}"
+#    name: "{{ vmware_vmname }}"
+#    password: "{{ vcenter_password }}"
+#    username: "{{ vcenter_username }}"
+#    validate_certs: false
+#    attributes:
+#      - name: "Kubernetes"
+#        value: "True"
+#  delegate_to: localhost
+- name: Install cifs plugin
+  ansible.builtin.script:
+    cmd: cifs.sh
+    executable: /bin/bash
+- name: Get Kubernetes CA hash
+  become: true
+  ansible.builtin.shell: set -o pipefail && openssl x509 -in /etc/kubernetes/pki/ca.crt -noout -pubkey | openssl rsa -pubin -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1
+  register: kubernetes_ca_hash
+  delegate_to: "{{ bootstrap_node_lifted }}"
+- name: Get Kubernetes CA key
+  ansible.builtin.command: kubeadm certs certificate-key
+  register: kubernetes_ca_key
+  delegate_to: "{{ bootstrap_node_lifted }}"
+  when: mode == "master"
+- name: Uploade certificates for bootstrapping
+  become: true
+  ansible.builtin.command: kubeadm init phase upload-certs --upload-certs --certificate-key {{ kubernetes_ca_key.stdout }}
+  delegate_to: "{{ bootstrap_node_lifted }}"
+  when: mode == "master"
+- name: Create join token
+  become: true
+  ansible.builtin.command: kubeadm token create
+  delegate_to: "{{ bootstrap_node_lifted }}"
+  register: kubernetes_token
+- name: Join node (master)
+  become: true
+  ansible.builtin.command: kubeadm join {{ endpoint_hostname }}:{{ endpoint_port }} --token {{ kubernetes_token.stdout }} --discovery-token-ca-cert-hash sha256:{{ kubernetes_ca_hash.stdout }} --control-plane --certificate-key {{ kubernetes_ca_key.stdout }}
+  when: mode == "master"
+- name: Join node (worker)
+  become: true
+  ansible.builtin.command: kubeadm join {{ endpoint_hostname }}:{{ endpoint_port }} --token {{ kubernetes_token.stdout }} --discovery-token-ca-cert-hash sha256:{{ kubernetes_ca_hash.stdout }}
+  when: mode == "worker" or mode == "storage"
+- name: Label and taint node (storage)
+  ansible.builtin.shell: |
+    kubectl label node {{ vmware_vmname }} node-role.kubernetes.io/storage=storage
+    kubectl taint nodes {{ vmware_vmname }} node-role.kubernetes.io/storage:NoSchedule
+  delegate_to: "{{ bootstrap_node_lifted }}"
+  when: mode == "storage"
+- name: Label node (worker)
+  ansible.builtin.command: kubectl label node {{ vmware_vmname }} node-role.kubernetes.io/worker=worker
+  delegate_to: "{{ bootstrap_node_lifted }}"
+  when: mode == "worker"
+- name: Update kubeconfig (awx)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig
+  when: mode == "master"
+- name: Update kubeconfig (root)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig-root
+  when: mode == "master"
+- name: Enable kubectl completion
+  become: true
+  ansible.builtin.shell: |
+    mkdir -p /etc/bash_completion.d
+    kubectl completion bash >/etc/bash_completion.d/kubectl
+    echo 'alias k=kubectl' >>/etc/bash.bashrc
+    echo 'complete -F __start_kubectl k' >>/etc/bash.bashrc
+  when: mode == "master"
+- name: Install stern
+  ansible.builtin.import_role:
+    name: kube-stern
+  when: mode == "master"
+
+- name: Update kubeconfig (awx)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig
+  when: mode == "master"
+- name: Update kubeconfig (root)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig-root
+  when: mode == "master"
+- name: Install stern
+  ansible.builtin.import_role:
+    name: kube-stern
+  when: mode == "master"
+- name: Enable kubectl completion
+  become: true
+  ansible.builtin.shell: |
+    mkdir -p /etc/bash_completion.d
+    kubectl completion bash >/etc/bash_completion.d/kubectl
+    echo 'alias k=kubectl' >>/etc/bash.bashrc
+    echo 'complete -F __start_kubectl k' >>/etc/bash.bashrc
+  when: mode == "master"
+- name: Setup
+  ansible.builtin.setup:
+  when: mode == "master"
+- name: Include role
+  ansible.builtin.include_role:
+    name: andrewrothstein.kubernetes-helm
+  when: mode == "master"

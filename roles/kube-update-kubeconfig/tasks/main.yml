@@ -1,0 +1,14 @@
+---
+- name: Create .kube directory
+  ansible.builtin.file:
+    state: directory
+    dest: .kube
+- name: Copy kubeconfig to the .kube directory
+  become: true
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: .kube/config
+    mode: 0600
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"

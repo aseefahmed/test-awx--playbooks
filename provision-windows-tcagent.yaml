@@ -1,0 +1,27 @@
+- hosts: localhost
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  gather_facts: false
+  tasks:
+    - ansible.builtin.include_role:
+        name: select-subnet-forvm
+    - ansible.builtin.import_role:
+        name: windows-vm
+    - ansible.builtin.import_role:
+        name: fix-instance-name
+    - name: Add machine to in-memory inventory_plugins
+      ansible.builtin.add_host:
+        name: "{{ instance_name }}"
+        group: new
+        ansible_connection: winrm
+        ansible_winrm_server_cert_validation: ignore
+        ansible_user: "{{winrm_username}}"
+        ansible_password: "{{winrm_password}}"
+        ansible_winrm_transport: ntlm
+        ansible_become_method: runas
+- hosts: new
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - ansible.builtin.import_role:
+        name: windows-tc-agent

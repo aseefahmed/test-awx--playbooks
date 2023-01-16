@@ -1,0 +1,5 @@
+- hosts: target
+  gather_facts: false
+  tasks:
+  - ansible.builtin.import_role:
+      name: linux-cattle

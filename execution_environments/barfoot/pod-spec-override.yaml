@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: default
+spec:
+  containers:
+    # the image name just a placeholder it is not used
+    - image: 'quay.io/ansible/awx-ee:0.2.0'
+      name: worker
+      args:
+        - ansible-runner
+        - worker
+        - '--private-data-dir=/runner'
+      volumeMounts:
+        - mountPath: "/runner/data"
+          name: data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: awx-ee-data

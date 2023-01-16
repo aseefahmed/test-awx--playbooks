@@ -1,0 +1,49 @@
+- name: IPs report
+  hosts: all
+  gather_facts: true
+  tasks:
+  - name: Get ip
+    ansible.builtin.shell: getent hosts {{ inventory_hostname }} | awk '{ print $1 }'
+    register: resolved_ip
+    delegate_to: localhost
+  - name: Create report
+    ansible.builtin.template:
+      src: scripts/ips.j2
+      dest: /tmp/ips.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Ensure minio
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+    run_once: true
+  - name: Get timestamp
+    ansible.builtin.set_fact:
+      timestamp: "{{ iso8601.stdout }}"
+    delegate_to: localhost
+    run_once: true
+  - name: Upload files
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/ips.csv bt/ansible/report-ips-{{ timestamp }}.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Print download URL
+    ansible.builtin.debug:
+      msg: "Download CSV at https://{{ minio_server }}/ansible/report-ips-{{ timestamp }}.csv"
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      file_path_to_upload: /tmp/ips.csv
+      target_filename: report-ips-{{ timestamp }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"
+    run_once: true

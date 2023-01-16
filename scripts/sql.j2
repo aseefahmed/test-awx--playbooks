@@ -1,0 +1,10 @@
+server,instance,version,edition,number,upgrade,target
+{% for h in groups['all'] %}
+{% if hostvars[h]['sql_result'] is defined %}
+{% if hostvars[h]['sql_result'].stdout | length != 0 %}
+{% for l in hostvars[h]['sql_result'].stdout_lines %}
+{{ l }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endfor %}

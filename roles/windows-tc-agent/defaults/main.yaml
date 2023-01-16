@@ -1,0 +1,5 @@
+vault_address: https://vault.barfoot.co.nz
+vault_engine_version: 2
+vault_tc_secret_mount: Production
+vault_tc_path_prefix: "Infrastructure/teamcity/agents"
+teamcity_agent_target_dir: C:\BuildAgent

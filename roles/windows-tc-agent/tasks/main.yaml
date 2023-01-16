@@ -1,0 +1,29 @@
+- name: Set fact
+  ansible.builtin.set_fact:
+    teamcity_server_url_escaped: >-
+      {{ teamcity_server_url | regex_replace('\\','\\\\') | regex_replace(':','\:') }}
+    teamcity_agent_name_escaped: >-
+      {{ teamcity_agent_name | regex_replace('\\','\\\\') | regex_replace(':','\:') }}
+    teamcity_agent_target_dir_escaped: >-
+      {{ teamcity_agent_target_dir | regex_replace('\\','\\\\') | regex_replace(':','\:') }}
+    teamcity_agent_name_for_vault: >-
+      {{ teamcity_agent_name | regex_replace(' ','_') }}
+- name: Include role
+  ansible.builtin.include_role:
+    name: get-or-create-vault-secret
+  vars:
+    password_length: 32
+    password_chars: '01234567890abcdef'
+    secrets:
+      - secret_path: "{{ vault_tc_path_prefix }}/{{ teamcity_agent_name_for_vault }}"
+        secret_mount: "{{ vault_tc_secret_mount }}"
+        secret_key: token
+        variable_name: teamcity_token
+- name: Win template
+  win_template:
+    src: buildAgent.properties.template
+    dest: c:\Windows\Temp\buildAgent.properties
+- name: Run script
+  ansible.builtin.script: tcagent.ps1 "{{ teamcity_agent_target_dir }}" "{{ teamcity_server_url }}"
+- name: Run script
+  ansible.builtin.script: octomerge.ps1

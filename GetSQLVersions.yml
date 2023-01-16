@@ -1,0 +1,40 @@
+- name: Get SQL versions
+  hosts: win
+  gather_facts: false
+  tasks:
+  - name: Get SQL Verions
+    ansible.builtin.script: scripts/GetSQLversions.ps1
+    register: sql_result
+    changed_when: false
+  - name: Create report
+    ansible.builtin.template:
+      src: scripts/sql.j2
+      dest: /tmp/sql.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Ensure we have minio client
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+    delegate_to: localhost
+    run_once: true
+  - name: Get current timestamp
+    ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+    run_once: true
+  - name: Upload report to minio [https://{{ minio_server }}/ansible/report-sql-{{ iso8601.stdout }}.csv]
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/sql.csv bt/ansible/report-sql-{{ iso8601.stdout }}.csv
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      filePath_to_upload: /tmp/sql.csv
+      target_filename: report-sql-{{ iso8601.stdout }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"
+    run_once: true

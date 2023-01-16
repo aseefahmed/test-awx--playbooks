@@ -1,0 +1,8 @@
+# Temporary file for the git repo private key
+temp_private_key_file: /tmp/private_key_file
+# This is where the git repo is cloned to
+git_target_directory: ~/manifests_git
+# This is where redndered manifest tempaltes end up
+manifests_target_directory: ~/manifests_rendered
+# This is the filesystem path to manifests directory inside git repo e.g ~/manifests_git/data/mymanifests
+manifests_directory: "{{ git_target_directory }}/{{ git_directory }}"

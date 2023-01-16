@@ -1,0 +1,48 @@
+version: "3.7"
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --providers.file.filename=/data/traefik.toml
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.toml:/data/traefik.toml
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.redirs.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirs.entrypoints=web"
+      - "traefik.http.routers.redirs.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    logging:
+      driver: local
+  grafana-test:
+    image: grafana/grafana:{{ grafana_tag }}
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - GF_SERVER_ROOT_URL=https://{{ grafana_host }}
+    volumes:
+      - /mnt/grafana/data:/var/lib/grafana
+      - /mnt/grafana/config:/etc/grafana
+    depends_on:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana-test.rule=Host(`{{ grafana_host }}`)"
+      - "traefik.http.routers.grafana-test.entrypoints=websecure"
+      - "traefik.http.routers.grafana-test.tls=true"
+    logging:
+      driver: local

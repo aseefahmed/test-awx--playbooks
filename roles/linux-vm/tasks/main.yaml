@@ -1,0 +1,309 @@
+- name: Set backup_flag fact to false when not defined
+  ansible.builtin.set_fact:
+    backup_flag: "false"
+  when: backup_flag is not defined
+
+# we call this at the beginning so we could fail fast if it's a d/s/t machine in DC01 and absense of backup is not acknowledged
+- name: Include role
+  ansible.builtin.include_role:
+    name: set-backup-tag
+  vars:
+    os: "linux"
+    vmname: "{{ vmware_vmname }}"
+    vmware_dc: "{{ vmware_datacentre }}"
+    bu_flag_set: "{{ backup_flag }}"
+
+# since the machine we are provisioning does not exist yet we cannot pick it up from the inventory
+- name: Set ansible host to vmware ip
+  ansible.builtin.set_fact:
+    ansible_host: "{{ vmware_ip }}"
+
+- name: Clone a virtual machine from Linux template and customize
+  vmware_guest:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ vmware_datacentre }}"
+    name: "{{ vmware_vmname }}"
+    folder: "{{ vmware_folder }}"
+    template: "{{ vmware_datacentre }}/vm/Templates/{{ vmware_template_name }}"
+    state: poweredon
+    wait_for_ip_address: true
+    datastore: "{{ vmware_datastore }}"
+    annotation: "{{ vmware_annotation }} Created by {{ tower_user_name | default(omit) }} on {{ lookup('pipe','TZ=Pacific/Auckland date +%F') }}"
+    hardware:
+      memory_mb: "{{ (vmware_memory_gb | int) * 1024 }}"
+      num_cpus: "{{ vmware_num_cpus }}"
+    networks:
+      - name: "{{ vmware_network }}"
+        ip: "{{ vmware_ip }}"
+        netmask: "{{ vmware_netmask }}"
+        gateway: "{{ gateways[vmware_network] }}"
+        domain: "{{ vmware_domain }}"
+        dns_servers: "{{ dnsservers[vmware_network].split(',') }}"
+    customization:
+      dns_servers: "{{ dnsservers[vmware_network].split(',') }}"
+      domain: "{{ vmware_domain }}"
+      hostname: "{{ vmware_vmname }}"
+    wait_for_customization: true
+  delegate_to: localhost
+
+- name: Resize disk
+  vmware_guest_disk:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ vmware_datacentre }}"
+    validate_certs: false
+    name: "{{ vmware_vmname }}"
+    disk:
+      - size_gb: "{{ vmware_disk_gb }}"
+        datastore: "{{ vmware_datastore }}"
+        state: present
+        scsi_controller: 0
+        unit_number: 0
+        scsi_type: "lsilogic"
+  delegate_to: localhost
+
+- name: Waiting for VM to become available
+  vmware_guest:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ vmware_datacentre }}"
+    name: "{{ vmware_vmname }}"
+    folder: "{{ vmware_folder }}"
+  register: vm_avail
+  until: "vm_avail.instance.hw_eth0.ipaddresses is not none and vm_avail.instance.hw_eth0.ipaddresses |length > 0"
+  retries: 10
+  delay: 15
+  delegate_to: localhost
+
+- name: Wait 300 seconds for port 22 to become open and contain "OpenSSH"
+  ansible.builtin.wait_for:
+    port: 22
+    host: '{{ vmware_ip }}'
+    search_regex: OpenSSH
+    delay: 10
+  delegate_to: localhost
+
+- name: Temporarely switch to provisioning user
+  ansible.builtin.set_fact:
+    # Configured ansible user should use ssh key authentications for this to work
+    saved_user: "{{ ansible_user }}"
+    ansible_user: "{{ provisioning_username }}"
+    ansible_password: "{{ provisioning_userpassword }}"
+    saved_key_file: "{{ ansible_ssh_private_key_file | default(omit) }}"
+    ansible_ssh_private_key_file: omit
+
+- name: If we cannot reach because the provisioning user is alreday disabled this is a re-run
+  ansible.builtin.ping:
+  register: ping
+  ignore_unreachable: true
+  failed_when: ping.ping is not defined and ping.msg is not match("Invalid/incorrect password.*")
+
+- name: Create configured users for administation
+  become: true
+  loop: "{{ admins }}"
+  ansible.builtin.user:
+    groups: "{{ item.groups }}"
+    append: true
+    name: "{{ item.username }}"
+    comment: "{{ item.realname }}"
+    password_lock: true
+    shell: /bin/bash
+  when: ping.ping is defined
+
+- name: Create .ssh directories for admin users
+  become: true
+  loop: "{{ admins }}"
+  ansible.builtin.file:
+    group: "{{ item.username }}"
+    owner: "{{ item.username }}"
+    state: directory
+    path: "/home/{{ item.username }}/.ssh"
+    mode: '700'
+  when: ping.ping is defined
+
+- name: Provision administrators public keys
+  become: true
+  loop: "{{ admins }}"
+  ansible.builtin.blockinfile:
+    group: "{{ item.username }}"
+    owner: "{{ item.username }}"
+    block: "{{ lookup('url', 'https://github.com/'+ item.github_name + '.keys', split_lines=False) }}"
+    path: "/home/{{ item.username }}/.ssh/authorized_keys"
+    create: true
+    mode: '600'
+  when: ping.ping is defined
+
+- name: Configure Sudoers
+  ansible.builtin.lineinfile:
+    line: '%sudo ALL=(ALL)NOPASSWD: ALL'
+    path: /etc/sudoers.d/sudo
+    create: true
+  become: true
+  when: ping.ping is defined
+
+- name: Switch back from provisioning user
+  ansible.builtin.set_fact:
+    ansible_user: "{{ saved_user }}"
+    ansible_ssh_private_key_file: "{{ saved_key_file | default(omit) }}"
+
+- name: Adjust disk size
+  ansible.builtin.script: "{{ disk_scripts[vmware_template_name] }}"
+
+- name: Add UTF locale to profile
+  become: true
+  ansible.builtin.copy:
+    src: lang.sh
+    dest: /etc/profile.d/lang.sh
+
+- name: Regenerate ssh host key since all VMs come from the same template
+  ansible.builtin.script: change-ssh-host-key.sh
+
+- name: "Remove local host key for that machine, since it's regenerated"
+  shansible.builtin.shellell: ssh-keygen -R "{{ vmware_ip }}"
+  delegate_to: localhost
+
+- name: Disable hypervisor timesync since we are syncing with ntp
+  ansible.builtin.script: disable-hypervisor-timesync.sh
+
+- name: Disable apt periodic updates since we are driving scheduled updates from awx
+  ansible.builtin.script: disable-apt-updates.sh
+
+# Deploys CrowdStrike sensor
+- name: Include role
+  ansible.builtin.include_role:
+    name: crowdstrike-deployment-linux
+
+- name: Write linux password to vault
+  ansible.builtin.include_role:
+    name: get-or-create-vault-password
+  vars:
+    secret_mount: "Production"
+    secret_path: "{{ vault_path_prefix }}/{{ vmware_vmname }}/root"
+    secret_key: "password"
+    version: 2
+
+- name: Set root password
+  become: true
+  ansible.builtin.user:
+    name: root
+    password: "{{ vault_password.value | password_hash('sha512', lookup('password', '/dev/null length=15 chars=ascii_letters')) }}"
+    password_lock: false
+
+- name: Kill provisioning user cached ssh connection so that provsionig user could be deleted
+  ansible.builtin.shell: pkill -9 -u `id -u {{ provisioning_username }}`
+  become: true
+
+- name: Delete provisioning user
+  become: true
+  ansible.builtin.user:
+    state: absent
+    name: "{{ provisioning_username }}"
+
+- name: Include role
+  ansible.builtin.include_role:
+    name: create-dns-record-internal
+  vars:
+    dns_name: "{{ vmware_vmname }}"
+    dns_target: "{{ vmware_ip }}"
+    dns_type: "a"
+
+- name: Update and upgrade apt packages
+  become: true
+  ansible.builtin.apt:
+    upgrade: dist
+    update_cache: true
+    autoremove: true
+
+- name: Gather facts if they were not gathered earlier
+  ansible.builtin.setup:
+
+# we might want to include PowerShell in the base packer image in future and skip this step altogether here
+- name: Install powershell
+  ansible.builtin.include_role:
+    name: powershell
+    apply:
+      become: true
+
+# CrowdStrike sensor has particular supported kernel versions, let's make sure we run latest supported one
+- name: Include role
+  ansible.builtin.include_role:
+    name: crowdstrike-linux-kernel
+  vars:
+    run_apt_update: false
+    run_setup: false
+    skip_if_os_unsupported: false
+    skip_if_no_crowdstrike: false
+    skip_reboot: false
+
+# This is so that Logic Monitor can monotor the VM
+- name: Import role
+  ansible.builtin.import_role:
+    name: linux-snmp
+
+- name: Tag new VM with specified Custom Attributes
+  loop: "{{ vmware_custom_attributes }}"
+  ansible.builtin.shell: |
+    set -o pipefail
+    $ErrorActionPreference = "Stop"
+    $server = Connect-VIServer -Server "{{ vcenter_server }}" -Password $env:VMWARE_PASSWORD -User $env:VMWARE_USER
+    $dc = Get-Datacenter "{{ vmware_datacentre }}"
+    $base = Get-Folder vm -Type VM -NoRecursion -Location $dc
+    "{{ vmware_folder }}".trim("/").split("/") | %{
+      $base = Get-Folder $_ -Type VM -NoRecursion -Location $base
+    }
+    $vm = Get-VM -Name "{{ vmware_vmname }}" -Location $base
+    $vm | Set-Annotation -CustomAttribute "{{item}}" -Value "True"
+  args:
+    executable: /usr/bin/pwsh
+  environment:
+    VMWARE_PASSWORD: "{{ vcenter_password }}"
+    VMWARE_USER: "{{ vcenter_username }}"
+  delegate_to: localhost
+  when: vmware_custom_attributes is defined
+
+# - name: Tag new VM with specified Custom Attributes
+#  vmware_guest_custom_attributes:
+#    datacenter: "{{ vmware_datacentre }}"
+#    folder: "{{ vmware_folder }}"
+#    hostname: "{{ vcenter_server }}"
+#    name: "{{ vmware_vmname }}"
+#    password: "{{ vcenter_password }}"
+#    username: "{{ vcenter_username }}"
+#    validate_certs: false
+#    attributes: '{{ vmware_custom_attributes | json_query("[].{name: @, value: `True`}") }}'
+#  delegate_to: localhost
+#  when: vmware_custom_attributes is defined
+
+- name: Add team tags to virtual machine
+  vmware_tag_manager:
+    hostname: '{{ vcenter_server }}'
+    username: '{{ vcenter_username }}'
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    tag_names:
+      - "Team:{{ vmware_team }}"
+    object_name: "{{ vmware_vmname }}"
+    object_type: VirtualMachine
+    state: add
+  delegate_to: localhost
+
+# For Veeam
+- name: Add backup tags to virtual machine
+  vmware_tag_manager:
+    hostname: '{{ vcenter_server }}'
+    username: '{{ vcenter_username }}'
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    tag_names:
+      - "Backups:{{ backup_job }}"
+    object_name: "{{ vmware_vmname }}"
+    object_type: VirtualMachine
+    state: add
+  delegate_to: localhost
+  when: backup_job is defined

@@ -1,0 +1,121 @@
+- name: Include role
+  ansible.builtin.include_role:
+    name: fix-instance-name
+
+- name: Install pip
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - python3-pip
+      - python-is-python3
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Ensure openshift
+  ansible.builtin.pip:
+    name: openshift
+    state: latest
+  become: true
+
+# We want to retain it locally so that we know what exactly was installed
+- name: Download k3s intallation script
+  become: true
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: ~/install.sh
+    mode: '0744'
+
+- name: Run the k3s installation script
+  become: true
+  ansible.builtin.command: ~/install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+
+- name: Install cert manager
+  ansible.builtin.include_role:
+    name: git-folder-apply
+    apply:
+      become: true
+  vars:
+    git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+    git_directory: blueprints/kubernetes/k3s-certs/1
+    git_version: "{{ git_version }}"
+    manifests_patterns: "*.yml"
+    apply_command: kubectl apply -f "{{ apply_target_path }}"
+
+- name: Download cert manager verifier
+  become: true
+  ansible.builtin.get_url:
+    url: https://github.com/alenkacz/cert-manager-verifier/releases/download/v{{ cert_manager_verifier_version }}/cert-manager-verifier_{{ cert_manager_verifier_version }}_Linux_x86_64.tar.gz
+    dest: ~/cm-verifier.tar.gz
+    mode: '0644'
+
+- name: Extract cert manager verifier
+  become: true
+  ansible.builtin.unarchive:
+    src: ~/cm-verifier.tar.gz
+    dest: "~"
+    remote_src: true
+
+- name: Remove cert manager verifier download
+  become: true
+  ansible.builtin.file:
+    path: ~/cm-verifier.tar.gz
+    state: absent
+
+- name: Verify cert manager
+  become: true
+  ansible.builtin.command: ~/cm-verifier --kubeconfig /etc/rancher/k3s/k3s.yaml
+  register: verifier
+  until: "verifier.rc == 0"
+  retries: 10
+  delay: 15
+
+- name: Apply Cluster Issuer and Cloudflare configuration
+  ansible.builtin.include_role:
+    name: git-folder-apply
+    apply:
+      become: true
+  vars:
+    extra_vars:
+      token: "{{ cloudflare_token }}"
+    git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+    git_directory: blueprints/kubernetes/k3s-certs/2
+    git_version: "{{ git_version }}"
+    manifests_patterns: "*.yml"
+    apply_command: kubectl apply -f "{{ apply_target_path }}"
+
+- name: Enable kubectl completion
+  become: true
+  ansible.builtin.shell:
+    cmd: |
+      mkdir -p /etc/bash_completion.d
+      kubectl completion bash >/etc/bash_completion.d/kubectl
+      echo 'alias k=kubectl' >>/etc/bash.bashrc
+      echo 'complete -F __start_kubectl k' >>/etc/bash.bashrc
+    warn: false
+
+- name: Install stern
+  ansible.builtin.import_role:
+    name: kube-stern
+
+- name: Create root .kube directory
+  become: true
+  ansible.builtin.file:
+    state: directory
+    dest: /root/.kube
+- name: Copy kubeconfig to the root .kube directory
+  become: true
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: /root/.kube/config
+    mode: 0600
+    owner: root
+    group: root
+
+- name: Setup
+  ansible.builtin.setup:
+- name: Include role
+  ansible.builtin.include_role:
+    name: andrewrothstein.kubernetes-helm

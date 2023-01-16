@@ -1,0 +1,21 @@
+- name: octopus sensitive variables report
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - ansible.builtin.include_role:
+      name: octopus-get-sensitive-vars
+    vars:
+      octopus_api_key: "{{ generic_password }}"
+      output_file_name: /tmp/octosensvars.csv
+      octopus_server_url: https://octopus.barfoot.co.nz
+  - name: Get current timestamp
+    ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      file_path_to_upload: /tmp/octosensvars.csv
+      target_filename: report-octopus-sensitive-{{ iso8601.stdout }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"

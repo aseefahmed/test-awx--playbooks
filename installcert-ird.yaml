@@ -1,0 +1,152 @@
+- name: Install Lets Encrypt IRD certificate
+  hosts: localhost
+  gather_facts: false
+  vars:
+    remote_host: p-in-certmgr-01.barfoot.co.nz
+    remote_path: /var/lib/rancher/k3s/storage/additional-subdomains-certs/
+    k8s_namespace_base: irdgatewaypayday
+    secret_path: "Applications/Jobs.IRDGatewayPayDay"
+    certs:
+      - environment: Test
+        cert_name: 7b12dacf26564a8ea230941337faf0e4.nonprod.finance.barfoot.co.nz
+        vault_ca_mount: Staging
+        vault_ca_path: "Infrastructure/kubernetes/staging2/certs"
+        k8s_host: "https://s-k8s-api.barfoot.co.nz:6443"
+      - environment: Staging
+        cert_name: 7b12dacf26564a8ea230941337faf0e4.nonprod.finance.barfoot.co.nz
+        vault_ca_mount: Staging
+        vault_ca_path: "Infrastructure/kubernetes/staging2/certs"
+        k8s_host: "https://s-k8s-api.barfoot.co.nz:6443"
+      - environment: Production
+        cert_name: 4d349b65332e477fbd070da59378a8d6.finance.barfoot.co.nz
+        vault_ca_mount: Production
+        vault_ca_path: "Infrastructure/kubernetes/production2/certs"
+        k8s_host: "https://p-k8s-api.barfoot.co.nz:6443"
+
+  tasks:
+    - name: Create local temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+      register: tempdir
+
+    - name: Get CA Cert
+      hashivault_read:
+        mount_point: "{{ item.vault_ca_mount }}"
+        secret: "{{ item.vault_ca_path }}"
+        key: "ca.crt"
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      register: 'ca_cert'
+      with_items: "{{certs}}"
+
+    - name: Copy ca cert to temp folder
+      ansible.builtin.copy: content={{ item.value }} dest={{tempdir.path}}/{{certs[idx_cert].environment}}-ca.crt
+      loop: "{{ca_cert.results}}"
+      loop_control:
+        index_var: idx_cert
+
+    - name: Get SA token
+      hashivault_read:
+        mount_point: "{{ item.environment }}"
+        secret: "{{ secret_path }}"
+        key: "cert_update_token"
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      register: 'sa_token'
+      with_items: "{{certs}}"
+
+    - name: Create password
+      ansible.builtin.set_fact:
+        testpwd: "{{ lookup('password', '{{ tempdir.path }}/{{item.cert_name}}/passwordfile chars=ascii_letters') }}"
+      with_items: "{{certs}}"
+
+    - name: Pull keys/files
+      delegate_to: localhost
+      ansible.builtin.command: |
+        /usr/bin/rsync -L -e "ssh -o StrictHostKeyChecking=no" --recursive "awx@{{remote_host}}:{{remote_path}}" "{{tempdir.path}}"
+      run_once: true
+
+    - name: Convert to pfx
+      delegate_to: localhost
+      ansible.builtin.command: "openssl pkcs12 -export -out {{tempdir.path}}/{{item.environment}}-{{item.cert_name}}.pfx -inkey {{tempdir.path}}/{{item.cert_name}}.key -in {{tempdir.path}}/{{item.cert_name}}.crt -passout pass:{{ lookup('password', '{{ tempdir.path }}/{{item.cert_name}}/passwordfile chars=ascii_letters') }}"
+      with_items: "{{certs}}"
+
+    - name: Get PFX file content
+      delegate_to: localhost
+      ansible.builtin.slurp:
+        src: "{{tempdir.path}}/{{item.environment}}-{{ item.cert_name }}.pfx"
+      register: pfx
+      with_items: "{{certs}}"
+
+    - name: Write secrets to vault
+      hashivault_secret:
+        mount_point: "{{ item.environment }}"
+        secret: "{{ secret_path }}"
+        data:
+          cert: "{{ pfx.results[idx_sec].content }}"
+          certPassword: "{{ lookup('password', '{{ tempdir.path }}/{{item.cert_name}}/passwordfile chars=ascii_letters') }}"
+        version: 2
+        state: update
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+      loop: "{{certs}}"
+      loop_control:
+        index_var: idx_sec
+
+    - name: Update certificate for cron job
+      kubernetes.core.k8s:
+        api_key: "{{sa_token.results[idx_k8s].value}}"
+        state: patched
+        kind: Secret
+        host: "{{ item.k8s_host }}"
+        ca_cert: "{{tempdir.path}}/{{item.environment}}-ca.crt"
+        namespace: "{{ item.environment | lower }}-{{ k8s_namespace_base }}"
+        name: irdgatewaypayday
+        definition:
+          data:
+            cert.pfx: "{{ pfx.results[idx_k8s].content }}"
+      loop: "{{certs}}"
+      loop_control:
+        index_var: idx_k8s
+
+    - name: Update certificate password for cron job
+      kubernetes.core.k8s:
+        api_key: "{{sa_token.results[idx_k8s].value}}"
+        state: patched
+        kind: CronJob
+        host: "{{ item.k8s_host }}"
+        ca_cert: "{{tempdir.path}}/{{item.environment}}-ca.crt"
+        namespace: "{{ item.environment | lower }}-{{ k8s_namespace_base }}"
+        name: irdgatewaypayday
+        definition:
+          spec:
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: irdgatewaypayday
+                        env:
+                          - name: Cert__Password
+                            value: "{{ lookup('password', '{{ tempdir.path }}/{{item.cert_name}}/passwordfile chars=ascii_letters') }}"
+      loop: "{{certs}}"
+      loop_control:
+        index_var: idx_k8s
+
+    - name: Remove local temp directory (Linux)
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{tempdir.path}}"
+        state: absent

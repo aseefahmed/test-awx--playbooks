@@ -1,0 +1,72 @@
+- name: Install git
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - git
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Copy over git private key
+  ansible.builtin.copy:
+    dest: "{{ temp_private_key_file }}"
+    content: "{{ git_private_key }}"
+    mode: '0600'
+
+- name: Get github repository with files to apply (sparse)
+  ansible.builtin.shell:
+    cmd: |
+      mkdir -p {{ git_target_directory }}
+      cd {{ git_target_directory }}
+      git init
+      git config core.sparseCheckout true
+      git config core.sshCommand 'ssh -i {{ temp_private_key_file }} -o "StrictHostKeyChecking no"'
+      git remote add -f origin {{ git_repo }}
+      git sparse-checkout set {{ git_directory }}
+      git checkout {{ git_version }}
+      rm -rf .git
+    warn: false
+  when: git_apply_mode | lower == "sparse"
+
+- name: Get github repository with files to apply
+  ansible.builtin.git:
+    accept_hostkey: true
+    dest: "{{ git_target_directory }}"
+    repo: "{{ git_repo }}"
+    version: "{{ git_version }}"
+    key_file: "{{ temp_private_key_file }}"
+  when: git_apply_mode | lower != "sparse"
+
+- name: Remove git private key
+  ansible.builtin.file:
+    path: "{{ temp_private_key_file }}"
+    state: absent
+
+- name: Resolve  folder path
+  ansible.builtin.stat:
+    path: "{{ manifests_directory }}"
+  register: manifests_directory_stat
+  failed_when: not manifests_directory_stat.stat.exists
+
+- name: Get list of files
+  ansible.builtin.find:
+    paths: "{{ manifests_directory_stat.stat.path }}"
+    file_type: file
+    recurse: "{{ manifests_recurse }}"
+    patterns: "{{ manifests_patterns }}"
+    hidden: true
+  register: files_matched
+  when: manifests_directory_stat.stat.isdir
+  failed_when: files_matched.matched == 0
+
+- name: Pass  single file to templating engine
+  ansible.builtin.set_fact:
+    files_matched:
+      files:
+        - path: "{{ manifests_directory }}"
+  when: not manifests_directory_stat.stat.isdir
+
+- name: Template remote file
+  ansible.builtin.include_tasks: remote_template.yml
+  loop_control:
+    loop_var: filepath
+  loop: "{{ files_matched.files | flatten | sort(attribute='path') | map(attribute='path') | list }}"

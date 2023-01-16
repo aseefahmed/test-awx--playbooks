@@ -1,0 +1,5 @@
+vault_address: https://vault.barfoot.co.nz
+vault_engine_version: 2
+restic_repository_prefix: 's3:minio-02.barfoot.co.nz/vm-backups'
+vault_restic_secret_mount: Production
+vault_restic_path_prefix: "Infrastructure/restic/vm-backups"

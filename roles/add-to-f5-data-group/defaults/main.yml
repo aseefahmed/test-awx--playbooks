@@ -1,0 +1,7 @@
+f5_user: "awx"
+vault_path_prefix: "Infrastructure/f5/{{f5_user}}"
+vault_engine_version: 2
+vault_address: https://vault.barfoot.co.nz
+f5_server:
+  Staging: 192.168.200.104
+  Production: 192.168.200.101

@@ -1,0 +1,19 @@
+dns_management_host: "p-mg-bco-01.barfoot.co.nz"
+
+staging_int_target:
+  identity: "s-k8s-identity.barfoot.co.nz"
+  main: "stg-k8s-cluster-int.barfoot.co.nz"
+prod_int_target:
+  identity: "p-k8s-identity.barfoot.co.nz"
+  main: "k8s-cluster-int.barfoot.co.nz"
+staging_ext_target:
+  identity:
+  main: "stg-k8s-cluster.barfoot.co.nz"
+prod_ext_target:
+  identity:
+  main: "k8s-cluster.barfoot.co.nz"
+
+prod_cf_target: "k8s.barfoot.co.nz"
+staging_cf_target: "s-k8s.barfoot.co.nz"
+
+datagroup: "k8s.external.urls"

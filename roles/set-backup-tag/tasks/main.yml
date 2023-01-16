@@ -1,0 +1,39 @@
+- name: Check for DST backup in DC01
+  ansible.builtin.fail:
+    msg: "ERROR: dev/test/staging servers deployed to DC01 will not get backed up. These servers should be deployed to DC02. If you need to deploy to DC01 please set the acknowledge flag to true in the survey or backup_flag variable and launch again"
+  when: vmware_dc == "DC01" and not vmname.startswith('p-') and bu_flag_set != "true"
+
+- name: Set application backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['p-ap'] }}"
+  when: vmname.startswith('p-ap') and os == "windows"
+
+- name: Set database backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['p-db'] }}"
+  when: vmname.startswith('p-db') and os == "windows"
+
+- name: Set file server backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['p-fs'] }}"
+  when: vmname.startswith('p-fs') and os == "windows"
+
+- name: Set misc backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['misc'] }}"
+  when: vmname.startswith('p-') and os == "windows" and backup_job is not defined
+
+- name: Set linux backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['linux'] }}"
+  when: vmname.startswith('p-') and os == "linux"
+
+- name: Set dr linux backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['linux-dr'] }}"
+  when: not vmname.startswith('p-') and os == "linux" and not vmware_dc == "DC01"
+
+- name: Set dr windows backup tag
+  ansible.builtin.set_fact:
+    backup_job: "{{ backup_tags['win-dr'] }}"
+  when: not vmname.startswith('p-') and os == "windows" and not vmware_dc == "DC01"

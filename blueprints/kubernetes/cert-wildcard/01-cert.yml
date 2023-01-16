@@ -1,0 +1,40 @@
+{% if skip_wildcard != true %}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: star-certificate
+  namespace: default
+spec:
+  dnsNames:
+  - "*.{{ wildcard_domain }}"
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: "{{ cluster_issuer }}"
+  secretName: star-certificate
+  usages:
+  - digital signature
+  - key encipherment
+{% endif %}
+{% if additional_subdomains != None and additional_subdomains | length > 0 %}
+{% for subdomain in additional_subdomains %}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: "{{ subdomain }}"
+  namespace: default
+spec:
+  dnsNames:
+  - "{{ subdomain }}.{{ wildcard_domain }}"
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: "{{ cluster_issuer }}"
+  secretName: "{{ subdomain }}-certificate"
+  usages:
+  - digital signature
+  - key encipherment
+{% endfor %}
+{% endif %}

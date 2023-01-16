@@ -1,0 +1,5 @@
+- hosts: ubuntu
+  gather_facts: false
+  tasks:
+  - ansible.builtin.include_role:
+      name: snipeit-ad-sync

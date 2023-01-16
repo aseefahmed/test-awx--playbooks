@@ -1,0 +1,144 @@
+---
+- name: Lift k8s environment specific variables
+  ansible.builtin.set_fact:
+    "{{ item.key }}": "{{ item.value }}"
+  loop: "{{ profiles[kubernetes_environment] | dict2items }}"
+- name: Import role
+  ansible.builtin.import_role:
+    name: linux-vm
+- name: Tag new VM with kubernetes Custom Attributes (PowerCLI)
+  ansible.builtin.shell: |
+    set -o pipefail
+    $ErrorActionPreference = "Stop"
+    $server = Connect-VIServer -Server "{{ vcenter_server }}" -Password $env:VMWARE_PASSWORD -User $env:VMWARE_USER
+    $dc = Get-Datacenter "{{ vmware_datacentre }}"
+    $base = Get-Folder vm -Type VM -NoRecursion -Location $dc
+    "{{ vmware_folder }}".trim("/").split("/") | %{
+      $base = Get-Folder $_ -Type VM -NoRecursion -Location $base
+    }
+    $vm = Get-VM -Name "{{ vmware_vmname }}" -Location $base
+    $vm | Set-Annotation -CustomAttribute Kubernetes -Value "True"
+  args:
+    executable: /usr/bin/pwsh
+  environment:
+    VMWARE_PASSWORD: "{{ vcenter_password }}"
+    VMWARE_USER: "{{ vcenter_username }}"
+  delegate_to: localhost
+# - name: Tag new VM with kubernetes Custom Attributes
+#  vmware_guest_custom_attributes:
+#    datacenter: "{{ vmware_datacentre }}"
+#    folder: "{{ vmware_folder }}"
+#    hostname: "{{ vcenter_server }}"
+#    name: "{{ vmware_vmname }}"
+#    password: "{{ vcenter_password }}"
+#    username: "{{ vcenter_username }}"
+#    validate_certs: false
+#    attributes:
+#      - name: "Kubernetes"
+#        value: "True"
+#  delegate_to: localhost
+- name: Read kubever file
+  become: true
+  ansible.builtin.slurp:
+    src: /root/kubever
+  register: kubever_blob
+- name: Set kubernetes_version
+  ansible.builtin.set_fact:
+    kubernetes_version: "{{ kubever_blob['content'] | b64decode }}"
+- name: Copy kubeadm configuration
+  ansible.builtin.template:
+    src: kubeadm.yml.template
+    dest: kubeadm.yml
+- name: Install kubernetes with kubeadm
+  become: true
+  ansible.builtin.command: kubeadm init --config kubeadm.yml --upload-certs
+- name: Update kubeconfig (awx)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig
+- name: Update kubeconfig (root)
+  ansible.builtin.import_role:
+    name: kube-update-kubeconfig-root
+- name: Install stern
+  ansible.builtin.import_role:
+    name: kube-stern
+- name: Enable kubectl completion
+  become: true
+  ansible.builtin.shell: |
+    mkdir -p /etc/bash_completion.d
+    kubectl completion bash >/etc/bash_completion.d/kubectl
+    echo 'alias k=kubectl' >>/etc/bash.bashrc
+    echo 'complete -F __start_kubectl k' >>/etc/bash.bashrc
+- name: Setup
+  ansible.builtin.setup:
+- name: Import role
+  ansible.builtin.import_role:
+    name: andrewrothstein.kubernetes-helm
+- name: Read docker registry credentials to overcome rate limit
+  hashivault_read:
+    mount_point: Production
+    secret: Infrastructure/docker/index.docker.io/btservice
+    key: dockerconfig
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: dockerconfig
+  delegate_to: localhost
+- name: Install calico
+  ansible.builtin.shell: |
+    helm repo add projectcalico https://docs.projectcalico.org/charts
+    helm install calico projectcalico/tigera-operator --version {{ calico_helm_version }} --set installation.enabled=false --set apiServer.enabled=false -n tigera-operator
+- name: Write dockerconfig
+  ansible.builtin.shell: |
+    set -o pipefail
+    cat <<'EOF' | tee dockerconfig.json >/dev/null
+    {{ dockerconfig.value }}
+    EOF
+- name: Write registry secret into the cluster
+  ansible.builtin.shell: |
+    kubectl create secret generic regcred --from-file=.dockerconfigjson=dockerconfig.json --type=kubernetes.io/dockerconfigjson -n tigera-operator
+- name: Copy calico installation configuration
+  teansible.builtin.templatemplate:
+    src: calico-installation.yml.template
+    dest: calico-installation.yml
+- name: Apply calico installation configuration
+  ansible.builtin.command: kubectl create -f calico-installation.yml
+- name: Retreive CA
+  ansible.builtin.shell: |
+    set -o pipefail
+    kubectl config view --raw --template='{{ '{{' }} index .clusters 0 "cluster" "certificate-authority-data" {{ '}}' }}' | base64 -d
+  register: ca
+# - name: Upload files
+#  shell: |
+#    cat <<'EOF' | tee ca.crt >/dev/null
+#    {{ ca.stdout }}
+#    EOF
+#    MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /mc cp ca.crt bt/kubernetes/{{ kubernetes_environment }}.crt
+#    rm ca.crt
+  no_log: true
+  delegate_to: localhost
+- name: Copy cluster admin configuration
+  ansible.builtin.template:
+    src: cluster-admin.yml.template
+    dest: cluster-admin.yml
+- name: Apply cluster admin configuration
+  ansible.builtin.shell: |
+    kubectl apply -f cluster-admin.yml
+- name: Copy scheduler permissions fix
+  ansible.builtin.template:
+    src: scheduler-fix.yml.template
+    dest: scheduler-fix.yml
+- name: Apply scheduler permissions fix
+  ansible.builtin.shell: |
+    kubectl apply -f scheduler-fix.yml
+- name: Import role
+  ansible.builtin.import_role:
+    name: kube-ingress-traefik
+- name: Debug
+  ansible.builtin.debug:
+    var: nfs_genesha_image
+- name: Import role
+  ansible.builtin.import_role:
+    name: kube-nfs-genesha

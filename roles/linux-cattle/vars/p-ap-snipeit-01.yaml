@@ -1,0 +1,85 @@
+vmware_vmname: p-ap-snipeit-01
+vmware_domain: barfoot.co.nz
+vmware_network: Admin Network
+vmware_ip: 192.168.6.34
+vmware_team: Infrastructure
+vmware_annotation: Snipe IT Asset Management (replaces Tracker spreadsheet)
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "30"
+vmware_folder: /Production/Docker
+vmware_datacentre: DC01
+vmware_datastore: DC01-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+# Variables for the blueprint
+traefik_tag: v2.7.1
+snipeit_host: snipe-it.barfoot.co.nz
+snipeit_tag: "6.0.8"
+mysql_tag: "8.0.29"
+
+secrets:
+#- secret_mount: Production
+#  secret_path: Infrastructure/snipeit/{{vmware_vmname}}.barfoot.co.nz
+#  secret_key: api_token
+#  engine_version: "2"
+#  variable_name: snipeit_api_token
+- secret_mount: Production
+  secret_path: Infrastructure/cloudflare/cert-manager
+  secret_key: token
+  engine_version: "2"
+  variable_name: cloudflare_token
+- secret_mount: Production
+  secret_path: Infrastructure/snipeit/{{vmware_vmname}}.barfoot.co.nz
+  secret_key: mysql_password
+  engine_version: "2"
+  variable_name: snipeit_mysql_password
+- secret_mount: Production
+  secret_path: Infrastructure/snipeit/{{vmware_vmname}}.barfoot.co.nz
+  secret_key: mysql_root_password
+  engine_version: "2"
+  variable_name: snipeit_mysql_root_password
+git_apply:
+- name: configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/snipe-it
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: docker-compose
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/snipe-it 
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: docker-compose.yaml
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+
+#mode: setup_backup
+#mode: no_persistance
+mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script: ~/manifests_rendered/backup/pre-backup.sh
+#  post_backup_script: ~/manifests_rendered/backup/post-backup.sh
+# used in restore mode
+restic_snapshot_to_restore: latest

@@ -1,0 +1,44 @@
+- name: Updates report
+  hosts: win
+  gather_facts: false
+  tasks:
+  - name: Get license status
+    win_shell: $data = Get-CimInstance SoftwareLicensingProduct -Filter "Name like 'Windows%'" | where { $_.PartialProductKey } | select Description, LicenseStatus;$data[0].LicenseStatus
+    register: oscmd_win
+    changed_when: false
+  - ansible.builtin.debug:
+      var: oscmd_win
+  - ansible.builtin.set_fact:
+      lc_status: "{{ oscmd_win.stdout_lines[0] }}"
+  - name: Create report
+    ansible.builtin.template:
+      src: scripts/winact.j2
+      dest: /tmp/winact.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Ensure we have minio client
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+    delegate_to: localhost
+    run_once: true
+  - name: Get current timestamp
+    ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+    run_once: true
+  - name: Upload report to minio [https://{{ minio_server }}/ansible/report-winact-{{ iso8601.stdout }}.csv]
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/winact.csv bt/ansible/report-winact-{{ iso8601.stdout }}.csv
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      file_path_to_upload: /tmp/winact.csv
+      target_filename: report-winact-{{ iso8601.stdout }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"
+    run_once: true

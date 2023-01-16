@@ -1,0 +1,41 @@
+- name: Updates report
+  hosts: ubuntu
+  gather_facts: false
+  tasks:
+  - ansible.builtin.shell: apt list --upgradeable 2>/dev/null | wc -l
+    register: updcmd
+    changed_when: false
+  - ansible.builtin.set_fact:
+      upd: "{{ updcmd.stdout_lines[0] }}"
+  - name: Create report
+    ansible.builtin.template:
+      src: scripts/updates.j2
+      dest: /tmp/updates.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Ensure we have minio client
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+    delegate_to: localhost
+    run_once: true
+  - name: Get current timestamp
+    ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+    run_once: true
+  - name: Upload report to minio [https://{{ minio_server }}/ansible/report-updates-{{ iso8601.stdout }}.csv]
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/updates.csv bt/ansible/report-updates-{{ iso8601.stdout }}.csv
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      file_path_to_upload: /tmp/updates.csv
+      target_filename: report-updates-{{ iso8601.stdout }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"
+    run_once: true

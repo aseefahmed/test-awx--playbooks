@@ -1,0 +1,3 @@
+- name: Rebuild Main Inventory Cache
+  ansible.builtin.script: inventory-main-cache.ps1
+  delegate_to: localhost

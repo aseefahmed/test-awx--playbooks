@@ -1,0 +1,135 @@
+# Load varables for specific VM to provision
+- name: Include vars
+  ansible.builtin.include_vars:
+    ansible.builtin.file: "{{ provisioning_target }}.yaml"
+# Production overwrite safeguard
+- name: Check if production provisioning is confirmed
+  ansible.builtin.fail:
+    msg: "ERROR: this playbook requires to confirm Production provisioning by setting up confirm_production to Production"
+  when: vmware_vmname.startswith('p-') and confirm_production != "Production"
+# Step: provision VM
+- name: Import role
+  ansible.builtin.import_role:
+    name: linux-vm
+
+# Step: get/generate custom passwords
+- name: Include role
+  ansible.builtin.include_role:
+    name: get-or-create-vault-secret
+
+# Step: setup hosting software
+- name: Include role
+  ansible.builtin.include_role:
+    name: "{{ item }}"
+  loop: "{{ platform_roles }}"
+
+# Step: setup additional software
+- name: Setup
+  ansible.builtin.setup: # used for andrewrothstein
+- name: Include role
+  ansible.builtin.include_role:
+    name: andrewrothstein.restic
+    apply:
+      become: true
+# This should already be there in all our base images
+# - ansible.builtin.include_role: # used for restore
+#    name: powershell
+#    apply:
+#      become: true
+- name: Install jq # not used by playbook
+  become: true
+  ansible.builtin.apt:
+    name: jq
+    state: present
+    update_cache: true
+
+# setup_backup
+- name: Block of tasks
+  when: mode == "setup_backup"
+  block:
+    - name: Write backup paths to vault
+      hashivault_write:
+        mount_point: "{{ vault_restic_secret_mount }}"
+        secret: "{{ vault_restic_path_prefix }}/{{ vmware_vmname }}.{{ vmware_domain }}"
+        data: "{{ setup_backup }}"
+        version: "{{ vault_engine_version }}"
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+    - name: Generate or read password from vault for restic user
+      ansible.builtin.include_role:
+        name: get-or-create-vault-secret
+      vars:
+        error_on_existing_secret_missing_key: "false"
+        secrets:
+          - secret_mount: "{{ vault_restic_secret_mount }}"
+            secret_path: "{{ vault_restic_path_prefix }}/{{ vmware_vmname }}.{{ vmware_domain }}"
+            secret_key: password
+            engine_version: "{{ vault_engine_version }}"
+            variable_name: restic_password
+    - name: Init restic backup
+      become: true
+      ansible.builtin.command: restic init
+      environment:
+        RESTIC_REPOSITORY: "{{ restic_repository_prefix }}/{{ setup_backup.repository_suffix |default(vmware_vmname ~ '.' ~ vmware_domain) }}"
+        RESTIC_PASSWORD: "{{ restic_password }}"
+        AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+
+# restore
+- name: Block
+  when: mode == "restore"
+  block:
+    - name: Read backup paths
+      hashivault_read:
+        mount_point: "{{ vault_restic_secret_mount }}"
+        secret: "{{ vault_restic_path_prefix }}/{{ vmware_vmname }}.{{ vmware_domain }}"
+        version: "{{ vault_engine_version }}"
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      register: backup_config
+      delegate_to: localhost
+
+    - name: Convert backup paths
+      ansible.builtin.shell: ("{{ backup_config.value.backup_paths }}" -split "," | %{ "--path $($_.trim())"}) -join " "
+      args:
+        executable: /usr/local/bin/pwsh
+      register: converted_backup_paths
+
+    - name: Restore restic backup
+      become: true
+      ansible.builtin.command: restic restore -t / {{ ('--host ' ~ restic_backup_hostname) if restic_backup_hostname is defined and restic_backup_hostname else '' }} {{ converted_backup_paths.stdout }} --verify {{ restic_snapshot_to_restore }}
+      environment:
+        RESTIC_REPOSITORY: "{{ restic_repository_prefix }}/{{ backup_config.value.repository_suffix if backup_config.value.repository_suffix is defined and backup_config.value.repository_suffix else (vmware_vmname ~ '.' ~ vmware_domain) }}"
+        RESTIC_PASSWORD: "{{ backup_config.value.password }}"
+        AWS_ACCESS_KEY_ID: "{{ minio_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ minio_secret_key }}"
+
+# Step: Install App, e.g.:
+# - transform additional files
+# - apply docker compose
+# - run init scripts
+- name: Run git apply
+  ansible.builtin.include_role:
+    name: git-folder-apply
+    apply:
+      become: true
+      environment: "{{ git_apply[my_idx].env | default({}) }}"
+  vars:
+    git_repo: "{{ git_apply[my_idx].git_repo }}"
+    git_directory: "{{ git_apply[my_idx].git_directory }}"
+    git_private_key: "{{ git_apply[my_idx].git_private_key }}"
+    git_version: "{{ git_apply[my_idx].git_version }}"
+    manifests_recurse: "{{ git_apply[my_idx].manifests_recurse }}"
+    manifests_patterns: "{{ git_apply[my_idx].manifests_patterns }}"
+    apply_command: "{{ git_apply[my_idx].apply_command }}"
+    manifests_target_directory: "{{ git_apply[my_idx].manifests_target_directory }}"
+  loop: "{{ git_apply }}"
+  loop_control:
+    index_var: my_idx

@@ -1,0 +1,8 @@
+fqdn,ip
+{% for h in groups['all'] %}
+{% if hostvars[h]['resolved_ip'] is defined %}
+{% for l in hostvars[h]['resolved_ip']['stdout_lines'] %}
+{{ h }},{{ l }}
+{% endfor %}
+{% endif %}
+{% endfor %}

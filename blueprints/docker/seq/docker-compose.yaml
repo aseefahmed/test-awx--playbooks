@@ -1,0 +1,67 @@
+services:
+  traefik:
+    image: traefik:{{ traefik_tag }}
+    container_name: traefik
+    restart: unless-stopped
+    dns: 8.8.8.8
+    command:
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --providers.docker.exposedByDefault=false
+      - --certificatesResolvers.letsencrypt.acme.email=infrastructure@barfoot.co.nz
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme.json
+      - --certificatesResolvers.letsencrypt.acme.dnsChallenge.provider=cloudflare
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --providers.file.filename=/data/traefik.toml
+      #- --certificatesResolvers.letsencrypt.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      #- --api.insecure
+      #- --log.level=DEBUG
+      #- --accesslog
+    ports:
+      - 80:80
+      - 443:443
+      #- 8080:8080
+    environment:
+      - CF_DNS_API_TOKEN=$CF_DNS_API_TOKEN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/docker/traefik:/etc/traefik
+      - ./traefik.toml:/data/traefik.toml
+    logging:
+      driver: local
+  seq:
+    image: datalust/seq:{{ seq_tag }}
+    container_name: seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: "$SEQ_FIRSTRUN_ADMINPASSWORDHASH"
+      SEQ_API_CANONICALURI: https://{{ seq_host_header }}
+    volumes:
+    - "/mnt/docker/seq:/data"
+    depends_on:
+      traefik:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.seq.rule=Host(`{{ seq_host_header }}`)"
+      - "traefik.http.routers.seq.entrypoints=websecure"
+      - "traefik.http.routers.seq.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.seq.service=seq"
+      - "traefik.http.services.seq.loadbalancer.server.port=80"
+    logging:
+      driver: local
+{% if gelf is defined %}
+  gelf:
+    image: datalust/seq-input-gelf:{{ seq_gelf_tag }}
+    container_name: gelf
+    restart: unless-stopped
+    ports:
+      - 12201:12201
+    environment:
+      SEQ_ADDRESS: http://seq:5341
+      GELF_ADDRESS: tcp://0.0.0.0:12201
+    logging:
+      driver: local
+{% endif %}      

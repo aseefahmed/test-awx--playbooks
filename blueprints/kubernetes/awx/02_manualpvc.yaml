@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: '{{ backup_pvc }}'
+  namespace: "{{ awx_namespace }}"
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: "{{ backup_size }}"
+  storageClassName: "{{ storage_class }}"
+  volumeMode: Filesystem
+  volumeName: "{{ backup_pv }}"

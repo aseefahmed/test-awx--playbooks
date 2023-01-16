@@ -1,0 +1,58 @@
+- name: Create local temporary directory
+  delegate_to: localhost
+  ansible.builtin.tempfile:
+    state: directory
+  register: vault_tempdir
+- name: Try reading password, ignore error
+  hashivault_read:
+    mount_point: "{{ item.secret_mount | default(default_secret_mount) }}"
+    secret: "{{ item.secret_path }}"
+    version: "{{ item.engine_version | default(default_engine_version) }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: 'vault_password'
+  delegate_to: localhost
+  ignore_errors: true
+- name: Set facts
+  ansible.builtin.set_fact:
+    new_data: "{{ { item.secret_key: lookup('password', '{{ vault_tempdir.path }}/passwordfile length={{ password_length }} chars={{ password_chars }}'), 'date': lookup('pipe','TZ=Pacific/Auckland date') } }}"
+- name: Fail
+  ansible.builtin.fail:
+    msg: "There is already a secret at '{{ item.secret_path }}', but it does not contain '{{ item.secret_key }}' key"
+  when: vault_password.value is defined and item.secret_key not in vault_password.value.keys() and error_on_existing_secret_missing_key|lower == "true"
+- name: Set facts
+  ansible.builtin.set_fact:
+    new_data: "{{ new_data | combine(vault_password.value) }}"
+  when: vault_password.value is defined and item.secret_key not in vault_password.value.keys() and error_on_existing_secret_missing_key|lower != "true"
+- name: Write password to vault
+  hashivault_write:
+    mount_point: "{{ item.secret_mount | default(default_secret_mount) }}"
+    secret: "{{ item.secret_path }}"
+    data: "{{ new_data }}"
+    version: "{{ item.engine_version | default(default_engine_version) }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  delegate_to: localhost
+  when: vault_password.value is not defined or item.secret_key not in vault_password.value.keys()
+- name: Set facts
+  ansible.builtin.set_fact:
+    vault_password: "{{ lookup('password', '{{ vault_tempdir.path }}/passwordfile length={{ password_length }} chars={{ password_chars }}') }}"
+  when: vault_password.value is not defined or item.secret_key not in vault_password.value.keys()
+- name: Set facts
+  ansible.builtin.set_fact:
+    vault_password: "{{ vault_password.value[item.secret_key] }}"
+  when: vault_password.value is defined and item.secret_key in vault_password.value.keys()
+- name: Set facts
+  ansible.builtin.set_fact:
+    "{{ item.variable_name }}": "{{ vault_password }}"
+- name: Remove local temp directory
+  delegate_to: localhost
+  ansible.builtin.file:
+    state: absent
+    path: "{{ vault_tempdir.path }}"

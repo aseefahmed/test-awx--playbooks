@@ -1,0 +1,80 @@
+vmware_vmname: s-ap-grafana-01
+vmware_domain: barfoot.co.nz
+vmware_network: Staging-Identity
+vmware_ip: 192.168.110.16
+vmware_team: IAM
+vmware_annotation: Staging IAM Grafana
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "16"
+vmware_folder: /StagingIdentity
+vmware_datacentre: DC02
+vmware_datastore: DC02-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+traefik_tag: v2.9.1
+grafana_tag: "9.1.7"
+grafana_host: s-iam.barfoot.co.nz
+
+secrets: []
+git_apply:
+- name: configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/grafana
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: docker-compose
+  # This is the git repo with your manifests. Use git protocol, not https
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  # This is the directory inside the repo (without leading slash) where the manifests are
+  git_directory: blueprints/docker/grafana
+  # This is the private key for the git repo
+  git_private_key: "{{ git_private_key }}"
+  # This specifies branch/tag/commit hash to switch to after cloning
+  git_version: "{{ git_version }}"
+  # This is where redndered manifest tempaltes end up
+  manifests_target_directory: ~/manifests_rendered
+  # This specifies if we want to get manifests from subfolders too
+  manifests_recurse: Yes
+  # Search pattern for the manifests like *.yml
+  manifests_patterns: docker-compose.yaml
+  # This is the command executed on the target to apply the file
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+#- name: init.sh
+#  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+#  git_directory: blueprints/docker/grafana
+#  git_private_key: "{{ git_private_key }}"
+#  git_version: "{{ git_version }}"
+#  manifests_target_directory: ~/manifests_rendered
+#  manifests_recurse: Yes
+#  manifests_patterns: "init.sh"
+#  apply_command: bash "{{ apply_target_path }}"
+
+#mode: setup_backup
+#mode: no_persistance
+mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/grafana
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script:
+#  post_backup_script:
+# used in restore mode
+restic_snapshot_to_restore: latest

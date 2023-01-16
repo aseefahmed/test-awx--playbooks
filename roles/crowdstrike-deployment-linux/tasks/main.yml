@@ -1,0 +1,6 @@
+- name: Run the script
+  become: true
+  ansible.builtin.script: download_and_install.sh
+  environment:
+    CCID: "{{  ccid }}"
+    SENSOR_URL: "{{ linux_sensor_url }}"

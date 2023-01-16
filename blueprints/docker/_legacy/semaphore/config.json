@@ -1,0 +1,57 @@
+{
+  "mysql": {
+    "host": "",
+    "user": "",
+    "pass": "",
+    "name": "",
+    "options": null
+  },
+  "bolt": {
+    "host": "",
+    "user": "",
+    "pass": "",
+    "name": "",
+    "options": null
+  },
+  "postgres": {
+    "host": "postgres",
+    "user": "postgres",
+    "pass": "{{ postgres_password }}",
+    "name": "semaphore?sslmode=disable",
+    "options": null
+  },
+  "dialect": "postgres",
+  "port": "",
+  "interface": "",
+  "tmp_path": "/tmp/semaphore",
+  "cookie_hash": "{{ cookie_hash }}",
+  "cookie_encryption": "{{ cookie_encryption }}",
+  "access_key_encryption": "{{ access_key_encryption }}",
+  "email_sender": "{{ email_sender }}",
+  "email_host": "{{ email_host }}",
+  "email_port": "{{ email_port }}",
+  "email_username": "{{ email_username }}",
+  "email_password": "{{ email_password }}",
+  "web_host": "https://{{ semaphore_host_header }}",
+  "ldap_binddn": "{{ ldap_binddn }}",
+  "ldap_bindpassword": "{{ ldap_bindpassword }}",
+  "ldap_server": "{{ ldap_server }}",
+  "ldap_searchdn": "dc=barfoot,dc=co,dc=nz",
+   "ldap_searchfilter": "(&(objectCategory=user)(sAMAccountName=%s))",
+  "ldap_mappings": {
+    "dn": "dn",
+    "mail": "mail",
+    "uid": "sAMAccountName",
+    "cn": "cn"
+  },
+  "telegram_chat": "{{ telegram_chat }}",
+  "telegram_token": "{{ telegram_token }}",
+  "max_parallel_tasks": 0,
+  "email_alert": true,
+  "email_secure": true,
+  "telegram_alert": true,
+  "ldap_enable": true,
+  "ldap_needtls": true,
+  "ssh_config_path": "",
+  "demo_mode": false
+}

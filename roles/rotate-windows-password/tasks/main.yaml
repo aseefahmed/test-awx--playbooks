@@ -1,0 +1,42 @@
+- name: Include role
+  ansible.builtin.include_role:
+    name: fix-instance-name
+- name: Create local temporary directory
+  delegate_to: localhost
+  ansible.builtin.tempfile:
+    state: directory
+  register: vault_tempdir
+- name: Write password to vault
+  hashivault_write:
+    mount_point: Production
+    secret: "{{ vault_path_prefix }}/{{ instance_name }}/administrator"
+    data: "{{ { 'password': lookup('password', '{{ vault_tempdir.path }}/passwordfile'), 'date': lookup('pipe','TZ=Pacific/Auckland date') } }}"
+    version: 2
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  delegate_to: localhost
+- name: Set fact
+  ansible.builtin.set_fact:
+    vault_password:
+      value: "{{ lookup('password', '{{vault_tempdir.path}}/passwordfile') }}"
+- name: Remove local temp directory
+  delegate_to: localhost
+  ansible.builtin.file:
+    state: absent
+    path: "{{ vault_tempdir.path }}"
+- name: Ansible win user
+  ansible.windows.win_user:
+    name: Administrator
+    password: "{{ vault_password.value }}"
+    state: present
+    groups_action: add
+    account_disabled: false
+    account_locked: false
+    password_expired: false
+    password_never_expires: true
+    update_password: always
+    user_cannot_change_password: false
+  when: skip_win_user == None

@@ -1,0 +1,41 @@
+kubernetes_environment:
+
+profiles:
+  staging2:
+    prometheus_host: stg-prometheus-k8s2.barfoot.co.nz
+    alertmanager_host: stg-alertmanager-k8s2.barfoot.co.nz
+    grafana_host: stg-grafana-k8s2.barfoot.co.nz
+    vault_secret_mount: Staging
+    kubectl_node: s-k8s-master-01.barfoot.co.nz
+    slack_main_channel: k8s_stg
+  production2:
+    prometheus_host: prometheus-k8s2.barfoot.co.nz
+    alertmanager_host: alertmanager-k8s2.barfoot.co.nz
+    grafana_host: grafana-k8s2.barfoot.co.nz
+    vault_secret_mount: Production
+    kubectl_node: p-k8s-master-01.barfoot.co.nz
+    slack_main_channel: k8s_prod
+  identity:
+    prometheus_host: prometheus-k8s-id.barfoot.co.nz
+    alertmanager_host: alertmanager-k8s-id.barfoot.co.nz
+    grafana_host: grafana-k8s-id.barfoot.co.nz
+    vault_secret_mount: Production
+    kubectl_node: p-k8s-idmst-01.barfoot.co.nz
+    slack_main_channel: k8s_prod
+  stagingidentity:
+    prometheus_host: stg-prometheus-k8s-id.barfoot.co.nz
+    alertmanager_host: stg-alertmanager-k8s-id.barfoot.co.nz
+    grafana_host: stg-grafana-k8s-id.barfoot.co.nz
+    vault_secret_mount: Staging
+    kubectl_node: s-k8s-idmst-01.barfoot.co.nz
+    slack_main_channel: k8s_stg
+  test:
+    prometheus_host: test-prometheus-k8s.barfoot.co.nz
+    alertmanager_host: test-alertmanager-k8s.barfoot.co.nz
+    grafana_host: test-grafana-k8s.barfoot.co.nz
+    vault_secret_mount: Test
+    kubectl_node: t-k8s-master-01
+    slack_main_channel: k8s_test
+
+slack_api_url:
+prometheus_helm_version: "39.13.3"

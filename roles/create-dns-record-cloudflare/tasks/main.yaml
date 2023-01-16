@@ -1,0 +1,72 @@
+- name: read cloudflare token
+  hashivault_read:
+    mount_point: "{{ vault_secret_mount }}"
+    secret: "{{ vault_path_prefix }}"
+    key: token
+    version: "{{ vault_engine_version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: cloudflare_token
+  delegate_to: localhost
+
+# - name: create cloudflare record
+#  script: ../files/CreateCfDns.ps1 -token "{{cloudflare_token.value}}" -zoneName "{{zone_name}}" -content "{{dns_target}}" -name "{{dns_name}}" -type "{{dns_type}}"
+#  args:
+#    executable: /usr/bin/pwsh
+#  delegate_to: localhost
+
+- name: create cloudflare record
+  ansible.builtin.shell: |
+    set -o pipefail
+    $token = "{{cloudflare_token.value}}"
+    $zoneName = "{{zone_name}}"
+    $content = "{{dns_target}}"
+    $name = "{{dns_name}}"
+    $type = "{{dns_type}}"
+
+      $ErrorActionPreference = "Stop"
+
+      # Borrowed from https://github.com/PowerShell/PowerShell/issues/1995#issuecomment-303345059
+      #function Invoke-Native($command) {
+      #  $env:commandlineargumentstring = ($args.foreach({ '"' + ($_ -replace '(\\*)"', '$1$1\"' -replace '(\\*)$', '$1$1') + '"' })) -join ' ';
+      #  & $command --% %commandlineargumentstring%
+      #}
+
+      Write-Host "Getting ZoneId for $zoneName..."
+      #get zoneid
+
+      $zonejson = curl -sS "https://api.cloudflare.com/client/v4/zones" -H "Authorization: Bearer $token"  -H "Content-Type:application/json"
+
+      $zonedata = $zonejson | ConvertFrom-Json
+
+      if(!$zonedata.success){
+          $zonedata.errors | Write-Host
+          Throw "ERROR: An error ocurred see details above"
+      }
+
+      $zone = $zonedata.result | Where-Object { $_.name -eq $zoneName}
+      $zoneid = $zone.id
+      Write-Host "Creating CNAME $name.$zoneName"
+      #create CNAME
+      $recordData = @{
+          type = $type
+          name = $name
+          content = $content
+          ttl = 3600
+          priority = 10
+          proxied = $true
+        }
+      $recordJson = $recordData | ConvertTo-Json -Compress
+      #$dnsjson = Invoke-Native curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$zoneid/dns_records" -H "Authorization: Bearer $token" -H "Content-Type:application/json" --data $recordJson
+      $dnsjson = curl -sS -X POST "https://api.cloudflare.com/client/v4/zones/$zoneid/dns_records" -H "Authorization: Bearer $token" -H "Content-Type:application/json" --data $recordJson
+      $dnsdata = $dnsjson | ConvertFrom-Json
+      if(!$dnsdata.success){
+          $dnsdata.errors | Write-host
+          Throw "ERROR: An error ocurred see details above"
+      }
+  args:
+    executable: /usr/bin/pwsh
+  delegate_to: localhost

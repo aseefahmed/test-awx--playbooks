@@ -1,0 +1,64 @@
+gateways:
+  Admin Network: 192.168.6.252
+  Stage-Admin: 192.168.60.254
+  Stage-DMZ: 192.168.70.254
+  Stage-DMZ-Backend: 192.168.80.254
+  Dev: 10.150.255.1
+  DMZ: 192.168.7.251
+  DMZ Back End: 192.168.8.254
+  Identity: 192.168.11.254
+  Staging-Identity: 192.168.110.254
+  Branch-DMZ: 192.168.16.254
+  Infrastructure: 192.168.200.254
+
+dnsservers:
+  Admin Network: "192.168.6.6,192.168.6.49"
+  Stage-Admin: "192.168.6.6,192.168.6.49"
+  Stage-DMZ: "192.168.7.55,192.168.7.64"
+  Stage-DMZ-Backend: "192.168.6.6,192.168.6.49"
+  Dev: "192.168.6.6,192.168.6.49"
+  DMZ: "192.168.7.55,192.168.7.64"
+  DMZ Back End: "192.168.6.6,192.168.6.49"
+  Identity: "192.168.11.1"
+  Staging-Identity: "192.168.11.1"
+  Branch-DMZ: "8.8.8.8"
+  Infrastructure: "192.168.6.6,192.168.6.49"
+
+target_ip: "{{ vmware_ip }}"
+target_host: "{{ vmware_vmname }}"
+target_domain: "{{ vmware_domain }}"
+
+admins:
+  - github_name: 'bt-infrastructure'
+    username: awx
+    realname: awx
+    groups: adm,cdrom,sudo,dip,plugdev
+  - github_name: 'andrewsav-bt'
+    username: asavinykh
+    realname: Andrew Savinykh
+    groups: adm,cdrom,sudo,dip,plugdev
+  - github_name: 'cainef'
+    username: cfreeman
+    realname: Caine Freeman
+    groups: adm,cdrom,sudo,dip,plugdev
+  - github_name: 'BTMMA'
+    username: mma
+    realname: Martin Ma
+    groups: adm,cdrom,sudo,dip,plugdev
+  - github_name: 'aseefahmed'
+    username: aahmed
+    realname: Aseef Ahmed
+    groups: adm,cdrom,sudo,dip,plugdev
+
+provisioning_username: vagrant
+provisioning_userpassword: vagrant
+
+disk_scripts:
+  template-ubuntu-2204-server-base: add-space-2204.sh
+  template-ubuntu-2004-server-base: add-space-2004.sh
+  template-kubernetes-1-23: add-space-2004.sh
+  template-kubernetes-1-24: add-space-2004.sh
+  template-kubernetes-1-25: add-space-2204.sh
+
+vmware_network:
+vmware_domain:

@@ -1,0 +1,6 @@
+# This file is source controlled at
+# https://github.com/BarfootThompson/devops-notes/tree/master/blueprints/docker/mta
+# Please update the source if you need to modify this file
+
+{{ allowed_ips_expressiion }}
+/(^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$)/ REJECT Not allowed to send from IP $1

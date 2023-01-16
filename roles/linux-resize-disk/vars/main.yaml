@@ -1,0 +1,14 @@
+rescans:
+  - /sys/class/block/sda/device/rescan
+
+resizes:
+  - /dev/sda 2
+  - /dev/sda 5
+
+pvresizes:
+  - /dev/sda5
+
+lvextends:
+  - /dev/vgvagrant/root
+
+vmware_datastore:

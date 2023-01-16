@@ -1,0 +1,22 @@
+---
+# instructions per https://docs.docker.com/install/linux/docker-ce/debian/
+- name: Sudo mkdir -p /etc/apt/keyrings
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: 0755
+- name: Add apt key
+  become: true
+  become_user: root
+  ansible.builtin.shel: curl -fsSL https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+- name: Add apt repository
+  become: true
+  become_user: root
+  ansible.builtin.apt_repository:
+    repo: 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable'
+    filename: docker
+    state: present
+- name: Include tasks
+  ansible.builtin.include_tasks: os-pkgs.yml

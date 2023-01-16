@@ -1,0 +1,46 @@
+- name: Create local temporary directory
+  delegate_to: localhost
+  ansible.builtin.tempfile:
+    state: directory
+  register: vault_tempdir
+
+- name: Try reading password, ignore error
+  hashivault_read:
+    mount_point: "{{ secret_mount }}"
+    secret: "{{ secret_path }}"
+    key: "{{ secret_key }}"
+    version: "{{ version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  register: 'vault_password'
+  delegate_to: localhost
+  ignore_errors: true
+
+- name: Write password to vault
+  hashivault_write:
+    mount_point: "{{ secret_mount }}"
+    secret: "{{ secret_path }}"
+    data: "{{ { secret_key: lookup('password', '{{ vault_tempdir.path }}/passwordfile'), 'date': lookup('pipe','TZ=Pacific/Auckland date') } }}"
+    version: "{{ version }}"
+  environment:
+    VAULT_ADDR: "{{ vault_address }}"
+    VAULT_AUTHTYPE: approle
+    VAULT_ROLE_ID: "{{ vault_role_id }}"
+    VAULT_SECRET_ID: "{{ vault_secret_id }}"
+  delegate_to: localhost
+  when: vault_password.value is not defined
+
+- name: Set facts
+  ansible.builtin.set_fact:
+    vault_password:
+      value: "{{ lookup('password', '{{vault_tempdir.path}}/passwordfile') }}"
+  when: vault_password.value is not defined
+
+- name: Remove local temp directory
+  delegate_to: localhost
+  ansible.builtin.file:
+    state: absent
+    path: "{{ vault_tempdir.path }}"

@@ -1,0 +1,21 @@
+- name: Run apt update unless it was already run earlier
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 86400 # One day
+  when: run_apt_update
+
+- name: Check if crowdstrike is installed
+  become: true
+  ansible.builtin.stat:
+    path: /opt/CrowdStrike/falconctl
+  register: falconctl
+
+- name: Fail if no crowdstrile
+  ansible.builtin.fail:
+    msg: "Crowdstrike must be installed for this role to work"
+  when: not falconctl.stat.exists and not skip_if_no_crowdstrike
+
+- name: Include tasks
+  ansible.builtin.include_tasks: do_vm_with_crowdstrike.yaml
+  when: falconctl.stat.exists

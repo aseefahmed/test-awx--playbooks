@@ -1,0 +1,31 @@
+- hosts: ubuntu
+  gather_facts: false
+  tasks:
+  - name: Set fact to skip reboot for kubernetes
+    ansible.builtin.set_fact:
+      crowdstrike_skip_reboot: "{{ inventory_hostname is regex(skip_reboot_regex) }}"
+
+  - ansible.builtin.include_role:
+      name: linux-update
+
+  - ansible.builtin.include_role:
+      name: crowdstrike-linux-kernel
+    vars:
+      run_apt_update: false
+      run_setup: true
+      skip_if_os_unsupported: false
+      skip_if_no_crowdstrike: false
+      skip_reboot: "{{ crowdstrike_skip_reboot }}"
+
+  - name: Check if reboot required
+    ansible.builtin.stat:
+      path: /var/run/reboot-required
+    register: reboot_required_file
+
+  - name: Reboot if required
+    become: true
+    ansible.builtin.reboot:
+      reboot_timeout: 600
+    when:
+      - reboot_required_file.stat.exists == true
+      - crowdstrike_skip_reboot == false

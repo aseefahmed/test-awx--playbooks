@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root HOME=/root
+5 * * * * root systemctl restart snmpd >> /root/snmp-restart.log 2>&1

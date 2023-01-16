@@ -1,0 +1,16 @@
+---
+- name: Setup
+  ansible.builtin.setup: # used for andrewrothstein
+- name: Include role
+  ansible.builtin.include_role:
+    name: docker
+    apply:
+      become: true
+- name: Include role
+  ansible.builtin.include_role:
+    name: andrewrothstein.docker-compose
+    apply:
+      become: true
+- name: Include tasks
+  ansible.builtin.include_tasks: docker-users.yml
+  when: docker_users | length > 0

@@ -1,0 +1,8 @@
+backup_tags:
+  p-ap: "D-Pr-AP-04"
+  p-db: "D-Pr-DB-02"
+  p-fs: "D-Pr-FS-02"
+  misc: "D-Pr-MS-01"
+  linux: "D-Pr-Linux"
+  linux-dr: "D-Dr-Linux-01"
+  win-dr: "D-Dr-Windows-01"

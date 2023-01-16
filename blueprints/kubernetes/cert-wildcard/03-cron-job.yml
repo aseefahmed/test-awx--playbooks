@@ -1,0 +1,102 @@
+{% if skip_wildcard != true %}
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: star-cert
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          name: star-cert
+          labels:
+            app: star-cert
+        spec:
+          restartPolicy: "Never"
+          containers:
+            - name: star-cert
+              image: ubuntu
+              command:
+                - bash
+                - -c
+                - cp /secrets/* /certs
+              volumeMounts:
+                - name: disk
+                  mountPath: /certs
+                - name: secret
+                  readOnly: true
+                  mountPath: /secrets/_.{{ wildcard_domain }}.crt
+                  subPath: _.{{ wildcard_domain }}.crt
+                - name: secret
+                  readOnly: true
+                  mountPath: /secrets/_.{{ wildcard_domain }}.key
+                  subPath: _.{{ wildcard_domain }}.key
+          volumes:
+            - name: disk
+              persistentVolumeClaim:
+                claimName: star-cert
+            - name: secret
+              secret:
+                secretName: star-certificate
+                items:
+                  - key: tls.crt
+                    path: _.{{ wildcard_domain }}.crt
+                  - key: tls.key
+                    path: _.{{ wildcard_domain }}.key
+                defaultMode: 420
+{% endif %}
+{% if additional_subdomains != None and additional_subdomains | length > 0 %}
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: additional-subdomains-certs
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          name: additional-subdomains-certs
+          labels:
+            app: additional-subdomains-certs
+        spec:
+          restartPolicy: "Never"
+          containers:
+            - name: Additional-subdomains-certs
+              image: ubuntu
+              command:
+                - bash
+                - -c
+                - cp /secrets/* /certs
+              volumeMounts:
+                - name: disk
+                  mountPath: /certs
+{% for subdomain in additional_subdomains %}
+                - name: "secret-{{ loop.index }}"
+                  readOnly: true
+                  mountPath: /secrets/{{ subdomain }}.{{ wildcard_domain }}.crt
+                  subPath: {{ subdomain }}.{{ wildcard_domain }}.crt
+                - name: "secret-{{ loop.index }}"
+                  readOnly: true
+                  mountPath: /secrets/{{ subdomain }}.{{ wildcard_domain }}.key
+                  subPath: {{ subdomain }}.{{ wildcard_domain }}.key
+{% endfor %}
+          volumes:
+            - name: disk
+              persistentVolumeClaim:
+                claimName: additional-subdomains-certs
+{% for subdomain in additional_subdomains %}
+            - name: "secret-{{ loop.index }}"
+              secret:
+                secretName: "{{ subdomain }}-certificate"
+                items:
+                  - key: tls.crt
+                    path: {{ subdomain }}.{{ wildcard_domain }}.crt
+                  - key: tls.key
+                    path: {{ subdomain }}.{{ wildcard_domain }}.key
+                defaultMode: 420
+{% endfor %}
+{% endif %}

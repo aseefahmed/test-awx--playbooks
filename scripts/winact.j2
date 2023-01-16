@@ -1,0 +1,14 @@
+vm,lc_status
+{% for h in ansible_play_batch %}
+{% if hostvars[h]['lc_status'] is defined %}
+{% set lc_status = hostvars[h]['lc_status'] %}
+{% else %}
+{% set lc_status = '' %}
+{% endif %}
+{% if hostvars[h]['vmname'] is defined %}
+{% set vmname = hostvars[h]['vmname'] %}
+{% else %}
+{% set vmname = '' %}
+{% endif %}
+{{ vmname }},{{ lc_status }}
+{% endfor %}

@@ -1,0 +1,131 @@
+- name: Create MTA User
+  hosts: mta
+  gather_facts: false
+
+  tasks:
+    - name: Generate production password
+      ansible.builtin.shell: openssl rand -base64 12
+      register: mtapwd
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+    - ansible.builtin.set_fact:
+        mtapwd={{ mtapwd.stdout }}
+      run_once: true
+      no_log: true
+
+    - name: Generate dts password
+      ansible.builtin.shell: openssl rand -base64 12
+      register: dts_mtapwd
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+    - ansible.builtin.set_fact:
+        dts_mtapwd={{ dts_mtapwd.stdout }}
+      run_once: true
+      no_log: true
+
+    - name: Add to allowed from addresses
+      ansible.builtin.lineinfile:
+        regex: '/^.*{{email_sender}}@barfoot.*$'
+        path: /mnt/docker/postfix/config/bft-pcre-allowed-senders
+        line: '/^{{email_sender}}@barfoot\.co\.nz$/ OK'
+        insertbefore: BOF
+      become: true
+
+    - name: Check if user exists
+      ansible.builtin.shell: docker exec -i postfix sasldblistusers2 -f /etc/sasl2/sasldb2 | grep ^{{email_user}}@barfoot.co.nz
+      become: true
+      register: user_result
+      ignore_errors: true
+
+    - name: Check result
+      ansible.builtin.debug:
+        msg: "User already exists check Vault for credentials"
+      when: user_result.stdout | length > 0
+
+    - name: Add production email user
+      ansible.builtin.shell: echo "{{mtapwd}}" | docker exec -i postfix saslpasswd2 -c -p -f /etc/sasl2/sasldb2 -u "barfoot.co.nz" "{{ email_user }}"
+      become: true
+      when: user_result.stdout | length == 0 and 'p-' in inventory_hostname
+      no_log: true
+
+    - name: Add staging email user
+      ansible.builtin.shell: echo "{{dts_mtapwd}}" | docker exec -i postfix saslpasswd2 -c -p -f /etc/sasl2/sasldb2 -u "barfoot.co.nz" "{{ email_user }}"
+      become: true
+      when: user_result.stdout | length == 0 and 's-' in inventory_hostname
+      no_log: true
+
+    - name: Reload postfix configuration
+      ansible.builtin.command: docker exec -i postfix postfix reload
+      become: true
+      when: user_result.stdout | length == 0
+
+    - name: Check if IP Address in DataGroup on F5
+      bigip_command:
+        commands: list ltm data-group internal mta.whitelist | grep -o "{{ip_addr}}/32"
+        provider:
+          server: "192.168.200.101"
+          password: "{{ f5_production_admin_password }}"
+          user: "{{ f5_production_admin_username }}"
+          validate_certs: "no"
+      delegate_to: localhost
+      register: dg_result
+      run_once: true
+
+    - name: Check result
+      ansible.builtin.debug:
+        msg: "IP already exists in data-group"
+      when: dg_result.stdout | length > 0
+
+    - name: Add IP Address to DataGroup on F5
+      bigip_command:
+        commands: modify ltm data-group internal mta.whitelist records add { {{ip_addr}} } type ip
+        provider:
+          server: "192.168.200.101"
+          password: "{{ f5_production_admin_password }}"
+          user: "{{ f5_production_admin_username }}"
+          validate_certs: "no"
+      delegate_to: localhost
+      run_once: true
+      when: dg_result.stdout | length == 0
+
+    - name: Write production credentials to vault
+      hashivault_write:
+        secret: "Infrastructure/Mta/{{ email_user }}"
+        mount_point: Production
+        data:
+          email: "{{email_user}}@barfoot.co.nz"
+          password: "{{mtapwd}}"
+          sender: "{{email_sender}}@barfoot.co.nz"
+          date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+      when: user_result.stdout | length == 0
+      run_once: true
+
+    - name: Write staging credentials to vault
+      hashivault_write:
+        secret: "Infrastructure/Mta/{{ email_user }}"
+        mount_point: Staging
+        data:
+          email: "{{email_user}}@barfoot.co.nz"
+          password: "{{dts_mtapwd}}"
+          sender: "{{email_sender}}@barfoot.co.nz"
+          date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+        version: 2
+      environment:
+        VAULT_ADDR: https://vault.barfoot.co.nz
+        VAULT_AUTHTYPE: approle
+        VAULT_ROLE_ID: "{{ vault_role_id }}"
+        VAULT_SECRET_ID: "{{ vault_secret_id }}"
+      delegate_to: localhost
+      when: user_result.stdout | length == 0
+      run_once: true

@@ -1,0 +1,80 @@
+- name: Create Internal DNS CNAME Records
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+    become_method: runas
+    ansible_connection: winrm
+    ansible_become: true
+  win_shell: |
+    $ErrorActionPreference = "Stop"
+    $domain = "{{ dns_domain }}"
+    $name = "{{ dns_name }}"
+    $target = "{{ dns_target }}"
+    $dc = "{{ dns_dc }}"
+    $forwardrecords = Get-DnsServerResourceRecord -ZoneName $domain -Name $name -ComputerName $dc -ErrorAction SilentlyContinue
+    if ($forwardrecords) {
+        foreach($forwardrecord in $forwardrecords){
+            "Record already exists for $name" | Write-Host
+            if ($forwardrecord.RecordType -ne "CNAME") {
+                Throw "ERROR (Check DNS): A DNS record that is not a CNAME exists for $name..."
+            } elseif ($forwardrecord.RecordData.HostNameAlias -ne "$target.") {
+                Throw "ERROR (Check DNS): Targets differ. Requested: $target, existing: $($forwardrecord.RecordData.HostNameAlias)"
+            }
+        }
+    } else {
+        "No record found for $name with target $target, creating..." | Write-Host
+        Add-DnsServerResourceRecordCName -ZoneName $domain -Name $name -HostNameAlias $target -ComputerName $dc
+    }
+    "Done processing DNS record" | Write-Host
+  delegate_facts: true
+  delegate_to: "{{ dns_management_host }}"
+  when: dns_type|lower == "cname"
+
+- name: Create Internal DNS A record
+  vars:
+    ansible_become_user: "BARFOOT\\{{ winrm_username }}"
+    ansible_become_pass: "{{ winrm_password }}"
+    become_method: runas
+    ansible_connection: winrm
+    ansible_become: true
+  win_shell: |
+    $ErrorActionPreference = "Stop"
+    $domain = "{{ dns_domain }}"
+    $name = "{{ dns_name }}"
+    $ip = "{{ dns_target }}"
+    $dc = "{{ dns_dc }}"
+    $fqdn = "$name.$domain."
+    $ptrzonename = "{0}.in-addr.arpa" -f (($ip -split "\.")[2,1,0] -join ".")
+    $ptrhostname = ($ip -split "\.")[3]
+    $forwardrecords = Get-DnsServerResourceRecord -ZoneName $domain -Name $name -ComputerName $dc -ErrorAction SilentlyContinue
+    $reverserecords = Get-DnsServerResourceRecord -ZoneName $ptrzonename -Name $ptrhostname -ComputerName $dc -ErrorAction SilentlyContinue
+    if ($forwardrecords) {
+        foreach($forwardrecord in $forwardrecords){
+            "Record already exists for $name" | Write-Host
+            if ($forwardrecord.RecordType -ne "A") {
+                Throw "ERROR (Check DNS): A DNS record that is not an A exists ($($forwardrecord.RecordType)) for $name..."
+            } elseif ($forwardrecord.RecordData.IPv4Address.IPAddressToString -ne $ip) {
+                Throw "ERROR (Check DNS): Targets differ. Requested: $ip, existing: $($forwardrecord.RecordData.RecordData)"
+            }
+        }
+    } else {
+        "No A record found for $name with IP $ip, creating new A record..." | Write-Host
+        Add-DnsServerResourceRecordA -ZoneName $domain -Name $name -IPv4Address $ip -ComputerName $dc
+    }
+    <# "Done processing DNS A record" | Write-Host
+    if ($reverserecords) {
+        foreach($reverserecord in $reverserecords){
+            "Record already exists for $name" | Write-Host
+            $reverserecords.RecordData.PtrDomainName
+            if ($reverserecords.RecordData.PtrDomainName -ne $fqdn) {
+                Throw "ERROR (Check DNS): Targets differ. Requested: $fqdn, existing: $($reverserecords.RecordData.PtrDomainName)"
+            }
+        }
+    }else {
+        "No PTR record found for $name with IP $ip, creating new PTR record..." | Write-Host
+        Add-DnsServerResourceRecordPtr -Name $ptrhostname -ZoneName $ptrzonename -PtrDomainName $fqdn -ComputerName $dc
+    }
+    "Done processing DNS PTR record" | Write-Host #>
+  delegate_facts: true
+  delegate_to: "{{ dns_management_host }}"
+  when: dns_type|lower == "a"

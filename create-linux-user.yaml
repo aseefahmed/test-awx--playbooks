@@ -1,0 +1,54 @@
+- name: Create Linux User
+  hosts: ubuntu
+  vars:
+    superuser_groups: ["adm", "cdrom", "sudo", "dip", "plugdev"]
+  tasks:
+
+    - name: Create local temporary directory
+      delegate_to: localhost
+      ansible.builtin.tempfile:
+        state: directory
+      register: tempdir
+      when: generate_password == 'yes'
+
+    - name: Install whois for mkpasswd
+      become: true
+      ansible.builtin.apt:
+        name: whois
+        update_cache: true
+        cache_valid_time: 86400 # One day
+
+    - name: Generate password
+      ansible.builtin.shell: |
+        echo "{{ lookup('password', '{{tempdir.path}}/passwordfile') }}" | mkpasswd --method=sha-512 --stdin
+      register: password
+      when: generate_password == 'yes'
+
+    - name: Print password
+      ansible.builtin.debug:
+        msg: "Password is: {{ lookup('password', '{{tempdir.path}}/passwordfile') }}"
+      when: generate_password == 'yes'
+
+    - name: Create user
+      ansible.builtin.user:
+        append: true
+        groups: "{{ superuser_groups if superuser == 'yes' else omit }}"
+        name: "{{ username }}"
+        password: "{{ password.stdout if generate_password == 'yes' else '!' }}"
+        ansible.builtin.shell: "/bin/bash"
+      become: true
+
+    - name: Set authorized key
+      authorized_key:
+        user: "{{ username }}"
+        state: present
+        key: "https://github.com/{{ github_name }}.keys"
+      become: true
+      when: github_name is defined
+
+    - name: Remove local temp directory
+      delegate_to: localhost
+      ansible.builtin.file:
+        state: absent
+        path: "{{tempdir.path}}"
+      when: generate_password == 'yes'

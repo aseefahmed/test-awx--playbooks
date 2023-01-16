@@ -1,0 +1,92 @@
+- name: Include role
+  ansible.builtin.include_role:
+    name: fix-instance-name
+- name: Gather disk facts from "{{ vmware_vmname }}"
+  vmware_guest_disk_info:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ vmware_datacentre }}"
+    name: "{{ vmware_vmname }}"
+  delegate_to: localhost
+  register: vm_disk_info
+- name: Initialise scsi_controllers_info
+  ansible.builtin.set_fact:
+    scsi_controllers_info: []
+- name: Create a list holding all the info we need for each existing controller
+  vars:
+    scsi_controller_devices_query: >-
+      [?to_string(value.controller_key)=='{{ controller_key }}'].value.unit_number[]
+    scsi_controller_devices: >-
+      {{
+        vm_disk_info.guest_disk_info |
+        dict2items |
+        json_query(scsi_controller_devices_query)
+      }}
+    # Construct object directly so that we retain int type for further comparison usage.
+    current_controller: >-
+      {
+        "controller_number": {{ controller_number | int }},
+        "controller_key": {{ controller_key | int }},
+        "number_of_devices": {{ scsi_controller_devices | length | int }},
+        "max_unit_number": {{ scsi_controller_devices | max | int }},
+      }
+  ansible.builtin.set_fact:
+    scsi_controllers_info: "{{ scsi_controllers_info + [current_controller] }}"
+  loop: "{{ scsi_controller_unique_keys }}"
+  loop_control:
+    loop_var: controller_key
+    index_var: controller_number
+- name: Debug
+  ansible.builtin.debug:
+    var: scsi_controllers_info
+- name: Include blocks
+  block:
+    # Note: This was already sorted when we got controllers list in our first loop
+    - name: "Extract first controller having less than {{ scsi_max_devices }} disks"
+      ansible.builtin.set_fact:
+        scsi_controller: >-
+          {{
+            (
+              scsi_controllers_info |
+              selectattr('number_of_devices', '<', scsi_max_devices) |
+              list
+            ).0
+          }}
+  rescue:
+    - name: Fail if we cannot add an other controller id
+      # i.e.controllernumber of our last element in list is equal (or greater for tests) that scsi_max_controller_id
+      ansible.builtin.fail:
+        msg: All scsi controllers are full, disk cannot be added.
+      when: scsi_controllers_info[-1].controller_number >= scsi_max_controller_id
+
+    - name: Return an empty controller with incremented id
+      ansible.builtin.set_fact:
+        scsi_controller: >-
+          {
+            "controller_number": {{ scsi_controllers_info[-1].controller_number + 1 | int }},
+            "controller_key": {{ scsi_controllers_info[-1].controller_key + 1 | int }},
+            "number_of_devices": 0,
+            "max_unit_number": -1,
+          }
+- name: Debug
+  ansible.builtin.debug:
+    var: scsi_controller
+- name: Add disk
+  vmware_guest_disk:
+    hostname: "{{ vcenter_server }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ vmware_datacentre }}"
+    validate_certs: false
+    name: "{{ vmware_vmname }}"
+    disk:
+      - size_gb: "{{ new_disk_gb }}"
+        datastore: "{{ vmware_datastore }}"
+        type: thin
+        state: present
+        scsi_controller: "{{ scsi_controller.controller_number }}"
+        unit_number: "{{ scsi_controller.max_unit_number + 1 }}"
+        scsi_type: "lsilogic"
+  delegate_to: localhost

@@ -1,0 +1,24 @@
+vm,fqdn,os,kernel
+{% for h in ansible_play_batch %}
+{% if hostvars[h]['resolved_ip'] is defined %}
+{% set ip = hostvars[h]['resolved_ip']['stdout'] %}
+{% else %}
+{% set ip = '' %}
+{% endif %}
+{% if hostvars[h]['os'] is defined %}
+{% set os = hostvars[h]['os'] %}
+{% else %}
+{% set os = '' %}
+{% endif %}
+{% if hostvars[h]['vmname'] is defined %}
+{% set vmname = hostvars[h]['vmname'] %}
+{% else %}
+{% set vmname = '' %}
+{% endif %}
+{% if hostvars[h]['kernel'] is defined %}
+{% set kernel = hostvars[h]['kernel'] %}
+{% else %}
+{% set kernel = '' %}
+{% endif %}
+{{ vmname }},{{ h }},{{ os }},{{ kernel }}
+{% endfor %}

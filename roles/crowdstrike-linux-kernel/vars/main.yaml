@@ -1,0 +1,28 @@
+# apt update must be run for this role to succeed. If it was not run earlier in your playbook set it to true
+run_apt_update: false
+# ansible setup module is what implemnts gather_facts. If your playbook gathers fact or you ran setup earlier, set it to false
+run_setup: true
+# if this role is run against unsupported linux it will fail. Set this to true, to skip the role and avoid failure
+skip_if_os_unsupported: false
+# if this role is run against a target without crowdstrike installed it will fail. Set this to true, to skip the role and avoid failure
+skip_if_no_crowdstrike: false
+# if the playbook will reboot the VM later anyway, specify false, so that the role does not cause reboot
+skip_reboot: false
+# crowdstrike filters for getting kernel info
+kernel_info:
+  ubuntu22:
+    vendor: ubuntu
+    distro: ubuntu22
+    flavor: generic
+  ubuntu20:
+    vendor: ubuntu
+    distro: ubuntu20
+    flavor: generic
+  ubuntu18:
+    vendor: ubuntu
+    distro: ubuntu18
+    flavor: generic
+  ubuntu16:
+    vendor: ubuntu
+    distro: ubuntu16
+    flavor: generic

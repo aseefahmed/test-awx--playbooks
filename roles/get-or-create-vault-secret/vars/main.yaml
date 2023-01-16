@@ -1,0 +1,10 @@
+error_on_existing_secret_missing_key: "true"
+default_secret_mount:
+password_length: 20
+password_chars: 'ascii_letters,digits,.:-_,,'
+secrets: []
+# - secret_mount:
+#  secret_path:
+#  secret_key:
+#  engine_version:
+#  variable_name:

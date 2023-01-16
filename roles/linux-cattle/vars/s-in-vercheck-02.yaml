@@ -1,0 +1,103 @@
+vmware_vmname: s-in-vercheck-02
+vmware_domain: barfoot.co.nz
+vmware_network: Identity
+vmware_ip: 192.168.11.6
+vmware_team: Infrastructure
+vmware_annotation: Vercheck Identity Proxy
+vmware_template_name: template-ubuntu-2004-server-base
+vmware_num_cpus: "2"
+vmware_memory_gb: 4
+vmware_disk_gb: "16"
+vmware_folder: /Staging/DevOps
+vmware_datacentre: DC02
+vmware_datastore: DC02-SSD-05
+
+vmware_custom_attributes:
+- ResticSchedule1
+
+platform_roles:
+- linux-docker
+
+# Variables for the blueprint
+traefik_tag: v2.9.6
+vercheck_tag: v0.7.1
+vercheck_host: identity-vercheck.barfoot.co.nz
+vercheck_vault_url: https://vault.barfoot.co.nz
+vercheck_vault_path: Production/Infrastructure/versioning/identity/software
+
+secrets:
+- secret_mount: Production
+  secret_path: Infrastructure/versioning/identity/provisioning
+  secret_key: authToken
+  engine_version: "2"
+  variable_name: vercheck_proxy_auth_token
+- secret_mount: Production
+  secret_path: Infrastructure/versioning/identity/provisioning
+  secret_key: vault_role
+  engine_version: "2"
+  variable_name: vercheck_vault_role
+- secret_mount: Production
+  secret_path: Infrastructure/versioning/identity/provisioning
+  secret_key: vault_secret
+  engine_version: "2"
+  variable_name: vercheck_vault_secret
+- secret_mount: Production
+  secret_path: Infrastructure/cloudflare/cert-manager
+  secret_key: token
+  engine_version: "2"
+  variable_name: cloudflare_token
+- secret_mount: Production
+  secret_path: Infrastructure/versioning/main/provisioning
+  secret_key: githubToken
+  engine_version: "2"
+  variable_name: vercheck_github_token
+- secret_mount: Production
+  secret_path: Infrastructure/versioning/main/provisioning
+  secret_key: dockerHubToken
+  engine_version: "2"
+  variable_name: vercheck_docker_token
+git_apply:
+- name: configs
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  git_directory: blueprints/docker/vercheck
+  git_private_key: "{{ git_private_key }}"
+  git_version: "{{ git_version }}"
+  manifests_target_directory: ~/manifests_rendered
+  manifests_recurse: Yes
+  manifests_patterns: "*"
+  apply_command:
+- name: docker-compose
+  # This is the git repo with your manifests. Use git protocol, not https
+  git_repo: git@github.com:BarfootThompson/awx-playbooks.git
+  # This is the directory inside the repo (without leading slash) where the manifests are
+  git_directory: blueprints/docker/vercheck
+  # This is the private key for the git repo
+  git_private_key: "{{ git_private_key }}"
+  # This specifies branch/tag/commit hash to switch to after cloning
+  git_version: "{{ git_version }}"
+  # This is where redndered manifest tempaltes end up
+  manifests_target_directory: ~/manifests_rendered
+  # This specifies if we want to get manifests from subfolders too
+  manifests_recurse: Yes
+  # Search pattern for the manifests like *.yml
+  manifests_patterns: docker-compose.yaml
+  # This is the command executed on the target to apply the file
+  apply_command: docker compose -f "{{ apply_target_path }}" up -d --force-recreate
+
+#mode: setup_backup
+#mode: no_persistance
+mode: restore
+# used in setup_backup mode
+#setup_backup:
+#  #keep this value always
+#  date: "{{ lookup('pipe','TZ=Pacific/Auckland date') }}"
+#  #if you are running in the setup_backup mode you ususally need to sepcify path(s) to backup (comma-separate,no extra spaces)
+#  backup_paths: /mnt/docker/vercheck/data
+#  #you only need this if your repository suffix in minio is different from VM name (e.g. for vault)
+#  repository_suffix:
+#  #pathes to exclude from backup, space separated
+#  exclusion_paths:
+#  pre_backup_script:
+#  post_backup_script:
+# used in restore mode
+restic_snapshot_to_restore: latest

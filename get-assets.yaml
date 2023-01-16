@@ -1,0 +1,60 @@
+- name: assets report
+  hosts: all
+  gather_facts: false
+  tasks:
+  - name: Get operating system (windows)
+    win_shell: '(Get-WmiObject Win32_OperatingSystem).Name.split("|")[0] + $(if (!(Test-Path "$env:windir\explorer.exe")) { " (Core)" })'
+    register: oscmd_win
+    when: "'win' in group_names"
+    changed_when: false
+  - name: Get operating system (linux)
+    ansible.builtin.shell: "lsb_release -d | cut -f2-; uname -r"
+    register: oscmd_linux
+    when: "'linux' in group_names"
+    changed_when: false
+  - ansible.builtin.set_fact:
+      os: "{{ oscmd_win.stdout_lines[0] if 'win' in group_names else oscmd_linux.stdout_lines[0] }}"
+  - ansible.builtin.set_fact:
+      kernel: "{{ oscmd_linux.stdout_lines[1] }}"
+    when: "'linux' in group_names"
+  - name: Create report
+    ansible.builtin.template:
+      src: scripts/assets.j2
+      dest: /tmp/assets.csv
+    delegate_to: localhost
+    run_once: true
+  - name: Get vm information
+    ansible.builtin.script: scripts/GetVMInfo.ps1
+    environment:
+      VMWARE_HOST: "{{ vcenter_server }}"
+      VMWARE_PASSWORD: "{{ vcenter_password }}"
+      VMWARE_USER: "{{ vcenter_username }}"
+    changed_when: false
+    delegate_to: localhost
+    run_once: true
+  - name: Ensure we have minio client
+    ansible.builtin.get_url:
+      url: https://dl.min.io/client/mc/release/linux-amd64/mc
+      dest: /tmp/mc
+      mode: +x
+    delegate_to: localhost
+    run_once: true
+  - name: Get current timestamp
+    ansible.builtin.shell: 'date -u +"%Y-%m-%dT%H:%M:%SZ"'
+    register: iso8601
+    delegate_to: localhost
+    run_once: true
+  - name: Upload report to minio [https://{{ minio_server }}/ansible/report-assets-{{ iso8601.stdout }}.csv]
+    no_log: true
+    ansible.builtin.shell: |
+      MC_HOST_bt=https://{{ minio_access_key }}:{{ minio_secret_key}}@{{ minio_server }} /tmp/mc cp /tmp/vminfo.csv bt/ansible/report-assets-{{ iso8601.stdout }}.csv
+    delegate_to: localhost
+    run_once: true
+  - ansible.builtin.include_role:
+      name: upload-to-google-drive
+    vars:
+      file_path_to_upload: /tmp/vminfo.csv
+      target_filename: report-assets-{{ iso8601.stdout }}.csv
+      source_mime: "text/csv"
+      target_mime: "application/vnd.google-apps.spreadsheet"
+    run_once: true

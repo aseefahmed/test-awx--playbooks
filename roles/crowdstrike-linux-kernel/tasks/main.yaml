@@ -1,0 +1,40 @@
+# - name: Get curl that supports options that we need
+#  become: true
+#  shell: |
+#    $ErrorActionPreference = "Stop"
+#    curl -sSLf https://github.com/moparisthebest/static-curl/releases/download/v7.84.0/curl-amd64 -o /usr/local/bin/curl
+#    if ($LASTEXITCODE) { exit $LASTEXITCODE }
+#    chmod +x /usr/local/bin/curl
+#    if ($LASTEXITCODE) { exit $LASTEXITCODE }
+#  args:
+#    executable: /usr/bin/pwsh
+#    creates: /usr/local/bin/curl
+#  delegate_to: localhost
+#  run_once: true
+
+- name: Retreive falcon authentication token
+  changed_when: false
+  ansible.builtin.script: get-falcon-auth-token.ps1
+  delegate_to: localhost
+  register: falcon_token
+  run_once: true
+  # environment:
+  #  # This is for the debugging with "custom" curl
+  #  CURL_CA_BUNDLE: /etc/pki/tls/certs/ca-bundle.crt
+
+- name: Gather facts if they were not gathered earlier
+  ansible.builtin.setup:
+  when: run_setup
+
+- name: Set OS id to {{ ansible_distribution | lower }}{{ ansible_distribution_major_version | lower  }}
+  ansible.builtin.set_fact:
+    os_id: "{{ ansible_distribution | lower }}{{ ansible_distribution_major_version | lower  }}"
+
+- name: Fail if not supported OS
+  ansible.builtin.fail:
+    msg: "This role does not work with distribution {{ ansible_distribution }} major version {{ ansible_distribution_major_version }}"
+  when: os_id not in kernel_info and not skip_if_os_unsupported
+
+- name: Include tasks
+  ansible.builtin.include_tasks: do_supported_os.yaml
+  when: os_id in kernel_info

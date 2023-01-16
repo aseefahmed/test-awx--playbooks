@@ -1,0 +1,78 @@
+- name: Install snmp
+  become: true
+  ansible.builtin.apt:
+    name: snmpd
+    state: present
+    update_cache: true
+    cache_valid_time: 86400 # One day
+
+- name: Check for existing config
+  become: true
+  ansible.builtin.stat:
+    path: /etc/snmp/snmpd.conf
+  register: file_info
+
+- name: Config file does not exist so creating it
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/snmp/snmpd.conf
+    content: '{{ snmp_string }}'
+  register: new_config
+  when: not file_info.stat.exists
+
+- name: Read the config file
+  become: true
+  ansible.builtin.command: cat /etc/snmp/snmpd.conf
+  register: snmpd_conf
+
+- name: Backup original snmp config
+  become: true
+  ansible.builtin.command: mv /etc/snmp/snmpd.conf /etc/snmp/snmpd.conf.bak
+  when: not snmpd_conf.stdout.find( snmp_string ) != -1
+
+- name: Config file has wrong settings so updating it
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/snmp/snmpd.conf
+    content: '{{ snmp_string }}'
+  register: update_config
+  when: not snmpd_conf.stdout.find( snmp_string ) != -1
+
+- name: Read the service config file
+  become: true
+  ansible.builtin.command: cat /etc/default/snmpd
+  register: snmpd_svc_conf
+
+- name: Update snmpd service config
+  become: true
+  ansible.builtin.replace:
+    path: /etc/default/snmpd
+    regexp: 'SNMPDOPTS.*'
+    replace: '{{ snmp_config }}'
+    backup: true
+  register: update_svc_config
+  when: not snmpd_svc_conf.stdout.find(snmp_config) != -1
+
+- name: Enable service snmpd
+  become: true
+  ansible.builtin.service:
+    name: snmpd
+    enabled: true
+
+- name: Restart service snmpd
+  become: true
+  ansible.builtin.service:
+    name: snmpd
+    state: restarted
+  when: new_config.changed or update_config.changed or update_svc_config.changed # noqa: no-handler
+
+# - name: Setup cronjob to periodically restart snmp
+#  become: true
+#  ansible.builtin.copy:
+#    src: snmp-restart
+#    dest: /etc/cron.d/snmp-restart
+# - name: Remove cronjob to periodically restart snmp
+#  become: true
+#  file:
+#    path: /etc/cron.d/snmp-restart
+#    state: absent
